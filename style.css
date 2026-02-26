@@ -19,7 +19,6 @@
         /* 基础设置 */
         html {
             width: 100%;
-            height: 100%;
             margin: 0;
             padding: 0;
             overflow: hidden;
@@ -29,7 +28,6 @@
         }
         body {
             width: 100%;
-            height: 100%;
             margin: 0;
             padding: 0;
             overflow: hidden;
@@ -59,8 +57,6 @@ body {
 }
 .phone {
     width: 100vw;
-    height: 100vh;
-    height: 100dvh; /* 现代浏览器：动态视口高度，自动排除地址栏/底部工具栏 */
     overflow: hidden;
     position: relative;
     padding: 0 8px;
@@ -78,7 +74,6 @@ body {
         right: 0 !important;
         bottom: 0 !important;
         width: 100% !important;
-        height: auto !important;
         overflow: hidden !important;
     }
     .phone {
@@ -88,7 +83,6 @@ body {
         right: 0 !important;
         bottom: 0 !important;
         width: 100vw !important;
-        height: auto !important; /* 让 top/bottom 决定高度，不依赖 vh */
         margin: 0 !important;
         padding: 0 8px !important; /* 保持原有的左右 padding */
     }
@@ -103,7 +97,6 @@ body {
         right: 0 !important;
         bottom: 0 !important;
         width: 100% !important;
-        height: auto !important;
         overflow: hidden !important;
     }
     body.standalone-mode .phone {
@@ -113,7 +106,6 @@ body {
         right: 0 !important;
         bottom: 0 !important;
         width: 100vw !important;
-        height: auto !important;
         margin: 0 !important;
         padding: 0 8px !important;
     }
