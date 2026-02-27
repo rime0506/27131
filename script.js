@@ -57,19 +57,32 @@ if (_isPWAStandalone) {
 }
 
 // 移动端虚拟键盘适配
-// 原理：键盘弹起时 visualViewport.height 缩小，但 window.innerHeight（100vh）不变
+// 原理：键盘弹起时 visualViewport.height 缩小
 // 直接把 chat-window 高度设为可视视口高度，让整个底栏（输入框+按钮）都在键盘上方
 // PWA全屏模式特别处理：去掉安全区域padding + 对齐visualViewport偏移
+// 🔧 兼容性：部分 Android 手机键盘弹出时 window.innerHeight 也会缩小，
+//    导致 kbHeight 计算为 0，需要用初始高度做备用检测
 let _kbLastHeight = 0;
 let _kbLastTop = 0;
 let _kbRecalibrateTimer = null;
+const _kbInitialInnerHeight = window.innerHeight; // 🔧 记录初始屏幕高度，用于兼容 Android
 
 function applyKeyboardLayout() {
     const vp = window.visualViewport;
     if (!vp) return;
     
-    const kbHeight = Math.max(0, Math.round(window.innerHeight - vp.height));
+    // 🔧 主检测：visualViewport 高度 vs window.innerHeight
+    let kbHeight = Math.max(0, Math.round(window.innerHeight - vp.height));
     const vpTop = Math.round(vp.offsetTop || 0);
+    
+    // 🔧 备用检测：部分 Android 手机 window.innerHeight 也跟着键盘缩小
+    // 此时用初始记录的高度来检测
+    if (kbHeight < 50) {
+        const fallbackKb = Math.max(0, Math.round(_kbInitialInnerHeight - vp.height));
+        if (fallbackKb > 50) {
+            kbHeight = fallbackKb;
+        }
+    }
     
     // 高度和偏移都没变时跳过
     if (kbHeight === _kbLastHeight && vpTop === _kbLastTop) return;
@@ -77,6 +90,13 @@ function applyKeyboardLayout() {
     _kbLastTop = vpTop;
     
     const isKeyboardUp = kbHeight > 50;
+    
+    // 🔧 防止浏览器因输入框聚焦而滚动整个页面（部分 Android 会出现）
+    if (isKeyboardUp) {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+    }
     
     // 键盘弹起时：把聊天窗口高度缩到可视视口高度，整个底栏都在键盘上方
     // 键盘收起时：恢复原始状态（CSS bottom:0 自动撑满）
@@ -118,6 +138,9 @@ function applyKeyboardLayout() {
 }
 
 function handleKeyboardResize() {
+    // 🔧 防止页面因键盘弹出产生滚动偏移
+    window.scrollTo(0, 0);
+    
     // 立即执行一次
     applyKeyboardLayout();
     
@@ -135,6 +158,15 @@ if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', handleKeyboardResize);
     window.visualViewport.addEventListener('scroll', applyKeyboardLayout);
 }
+
+// 🔧 监听 window resize 事件作为备用（部分 Android 浏览器不触发 visualViewport 事件）
+window.addEventListener('resize', function() {
+    // 只在有聊天窗口显示时处理
+    const anyVisible = document.querySelector('.chat-window[style*="display: flex"], .chat-window[style*="display:flex"]');
+    if (anyVisible) {
+        handleKeyboardResize();
+    }
+});
 
 // 初始化DEXie数据库
 const db = new Dexie('DesktopDB');
@@ -35243,6 +35275,152 @@ function showLorebookPage() {
         if (typeof showToast === 'function') showToast('已清空自定义CSS');
     }
 
+    /**
+     * 显示CSS类名参考弹窗
+     * 列出聊天页面各区域的CSS类名，方便用户编写自定义CSS
+     */
+    function showCSSClassReference() {
+        let modal = document.getElementById('css-class-ref-modal');
+        if (modal) {
+            modal.style.display = 'flex';
+            return;
+        }
+        modal = document.createElement('div');
+        modal.id = 'css-class-ref-modal';
+        modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10001; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);';
+        modal.onclick = function(e) { if (e.target === modal) modal.style.display = 'none'; };
+
+        const sections = [
+            {
+                title: '📱 聊天页面 · 整体结构',
+                items: [
+                    ['.chat-window', '聊天窗口（整个页面容器）'],
+                    ['.chat-header', '顶栏（包含返回/标题/按钮）'],
+                    ['.chat-back', '返回按钮（左上角 ←）'],
+                    ['.chat-title', '标题（角色名字）'],
+                    ['.chat-more', '右侧按钮（线下模式 / 聊天详情 ···）'],
+                    ['.chat-body', '消息列表区域（中间滚动区）'],
+                    ['.chat-footer', '底栏（输入框区域容器）'],
+                ]
+            },
+            {
+                title: '⌨️ 输入区域',
+                items: [
+                    ['.chat-input-bar', '输入栏（一行：魔法棒+输入框+按钮）'],
+                    ['.chat-icon-btn', '图标按钮（接收回复🪄 / 表情😊 / 菜单⊕）'],
+                    ['.chat-input', '文字输入框'],
+                    ['.chat-send-btn', '发送按钮'],
+                    ['.chat-panel-container', '底部面板容器（表情/菜单共用）'],
+                    ['.emoji-panel', '表情面板（Emoji 列表）'],
+                    ['.action-panel', '菜单面板（+号展开的功能面板）'],
+                    ['.action-panel-page', '菜单面板分页'],
+                    ['.action-item', '菜单功能项（语音/相册/转账等）'],
+                    ['.action-icon-box', '菜单功能项图标容器'],
+                    ['.action-name', '菜单功能项文字'],
+                ]
+            },
+            {
+                title: '💬 消息气泡',
+                items: [
+                    ['.message-row', '消息行（每条消息的容器）'],
+                    ['.message-row.other', '对方消息行'],
+                    ['.message-row.self', '我的消息行'],
+                    ['.message-content', '消息气泡（文字内容区）'],
+                    ['.ai-bubble', '对方气泡（用于角色单独CSS）'],
+                    ['.user-bubble', '我的气泡（用于角色单独CSS）'],
+                    ['.message-avatar', '消息头像'],
+                    ['.message-timestamp', '时间戳（消息间的时间分隔）'],
+                ]
+            },
+            {
+                title: '🎤 语音气泡',
+                items: [
+                    ['.voice-bubble', '语音消息气泡（整个语音条）'],
+                    ['.voice-bubble-header', '语音条头部（图标+波纹+时长）'],
+                    ['.voice-icon', '语音图标'],
+                    ['.voice-bars', '语音波纹动画'],
+                    ['.voice-duration', '语音时长文字'],
+                    ['.voice-text-content', '语音转文字内容（展开后显示）'],
+                    ['.message-row.other .voice-bubble', '对方语音气泡'],
+                    ['.message-row.self .voice-bubble', '我的语音气泡'],
+                ]
+            },
+            {
+                title: '💳 卡片消息',
+                items: [
+                    ['.transfer-card', '转账卡片'],
+                    ['.transfer-card.done', '已收款的转账卡片'],
+                    ['.transfer-card.returned', '已退回的转账卡片'],
+                    ['.t-amount', '转账金额'],
+                    ['.t-desc', '转账备注'],
+                    ['.t-footer', '转账底部状态栏'],
+                    ['.redpacket-card', '红包卡片'],
+                    ['.family-card-msg', '亲属卡消息卡片'],
+                    ['.spr-card', '专属红包 / 礼物卡片'],
+                    ['.intimate-req-card', '亲密关系请求卡片'],
+                    ['.location-card', '位置卡片（整体）'],
+                    ['.location-card-text', '位置卡片文字区'],
+                    ['.location-card-name', '位置名称'],
+                    ['.location-card-map', '位置卡片地图区'],
+                ]
+            },
+            {
+                title: '💬 引用 & 其他',
+                items: [
+                    ['.quote-preview', '引用预览区（输入框上方）'],
+                    ['.quote-preview-name', '引用的发送者名字'],
+                    ['.quote-preview-msg', '引用的消息内容'],
+                    ['.quoted-message', '气泡中的引用消息块'],
+                    ['.quoted-message-name', '引用消息中的名字'],
+                    ['#sticker-suggestion-bar', '智能表情推荐栏'],
+                ]
+            },
+            {
+                title: '📋 微信列表页',
+                items: [
+                    ['.wechat-page', '微信页面容器'],
+                    ['.wechat-header', '微信页面顶栏'],
+                    ['.wechat-tab-bar', '微信底部Tab栏'],
+                    ['.wechat-tab-item', '底部Tab项'],
+                    ['.wechat-list-item', '聊天列表项（会话条目）'],
+                ]
+            },
+            {
+                title: '🏠 桌面',
+                items: [
+                    ['.top-widget', '顶部磨砂小组件'],
+                    ['.dock', '底部Dock栏'],
+                    ['.app-icon', '应用图标'],
+                    ['.app-icon .name', '应用图标文字'],
+                ]
+            },
+        ];
+
+        let html = '<div style="width:90%; max-width:420px; max-height:85vh; background:#fff; border-radius:20px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,0.3);">';
+        html += '<div style="padding:16px 20px; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; background:#f8f8f8;">';
+        html += '<div style="font-size:17px; font-weight:600; color:#333;">📋 CSS类名速查</div>';
+        html += '<div onclick="document.getElementById(\'css-class-ref-modal\').style.display=\'none\'" style="width:30px; height:30px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:20px; color:#999; border-radius:50%; background:#f0f0f0;">×</div>';
+        html += '</div>';
+        html += '<div style="flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:16px 20px;">';
+        html += '<div style="font-size:11px; color:#999; margin-bottom:12px; line-height:1.5;">点击类名可复制。在自定义CSS中使用这些类名来修改对应元素的样式。</div>';
+
+        for (const sec of sections) {
+            html += '<div style="margin-bottom:16px;">';
+            html += '<div style="font-size:14px; font-weight:600; color:#333; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid #f0f0f0;">' + sec.title + '</div>';
+            for (const [cls, desc] of sec.items) {
+                html += '<div style="display:flex; align-items:flex-start; gap:8px; margin-bottom:6px; line-height:1.4;">';
+                html += '<code onclick="navigator.clipboard.writeText(\'' + cls + '\');this.style.background=\'#d4edda\';setTimeout(()=>{this.style.background=\'#f0f0f0\'},600)" style="background:#f0f0f0; padding:2px 6px; border-radius:4px; font-size:11px; color:#c7254e; cursor:pointer; flex-shrink:0; white-space:nowrap; transition:background 0.2s; user-select:all; -webkit-user-select:all;">' + cls + '</code>';
+                html += '<span style="font-size:12px; color:#666;">' + desc + '</span>';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+
+        html += '</div></div>';
+        modal.innerHTML = html;
+        document.body.appendChild(modal);
+    }
+
     // 预览自定义CSS效果（聊天页面）
     function previewCustomCSS() {
         const cssCode = document.getElementById('custom-css-input').value;
@@ -48187,6 +48365,139 @@ function applyOfflineBubbleCSS() {
     styleEl.textContent = cssCode;
 }
 
+
+// ===== 线下模式预设管理 =====
+// localStorage key: offline_presets_preset / offline_presets_bubblecss
+
+/**
+ * 获取指定类型的所有预设列表
+ * @param {string} type - 'preset' 或 'bubblecss'
+ */
+function getOfflinePresets(type) {
+    const key = 'offline_presets_' + type;
+    try {
+        const data = localStorage.getItem(key);
+        return data ? JSON.parse(data) : [];
+    } catch (e) { return []; }
+}
+
+/**
+ * 保存预设列表到 localStorage
+ */
+function setOfflinePresets(type, list) {
+    const key = 'offline_presets_' + type;
+    localStorage.setItem(key, JSON.stringify(list));
+}
+
+/**
+ * 将当前输入框的内容保存为预设
+ */
+function saveOfflinePresetAs(type) {
+    const textareaId = type === 'preset' ? 'offline-custom-preset' : 'offline-custom-bubble-css';
+    const content = document.getElementById(textareaId)?.value?.trim();
+    if (!content) {
+        showToast('内容为空，无法保存');
+        return;
+    }
+
+    const name = prompt('请为预设命名：');
+    if (!name || !name.trim()) return;
+
+    const presets = getOfflinePresets(type);
+    presets.push({
+        name: name.trim(),
+        content: content,
+        time: Date.now()
+    });
+    setOfflinePresets(type, presets);
+    showToast('预设已保存：' + name.trim());
+}
+
+/**
+ * 显示预设列表弹窗
+ */
+function showOfflinePresetList(type) {
+    const presets = getOfflinePresets(type);
+    const typeName = type === 'preset' ? '自定义预设' : '气泡CSS预设';
+
+    // 移除旧弹窗
+    let old = document.getElementById('offline-preset-modal');
+    if (old) old.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'offline-preset-modal';
+    modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10002; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);';
+    modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+
+    let html = '<div style="width:90%; max-width:400px; max-height:80vh; background:#fff; border-radius:20px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,0.3);">';
+    html += '<div style="padding:16px 20px; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; background:#f8f8f8;">';
+    html += '<div style="font-size:17px; font-weight:600; color:#333;">📂 ' + typeName + '</div>';
+    html += '<div onclick="document.getElementById(\'offline-preset-modal\').remove()" style="width:30px; height:30px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:20px; color:#999; border-radius:50%; background:#f0f0f0;">×</div>';
+    html += '</div>';
+    html += '<div style="flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:12px 16px;">';
+
+    if (presets.length === 0) {
+        html += '<div style="text-align:center; padding:40px 0; color:#999; font-size:14px;">暂无保存的预设<br><span style="font-size:12px; color:#ccc;">在输入框填写内容后点击「保存为预设」</span></div>';
+    } else {
+        for (let i = 0; i < presets.length; i++) {
+            const p = presets[i];
+            const timeStr = new Date(p.time).toLocaleDateString('zh-CN') + ' ' + new Date(p.time).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+            const preview = p.content.length > 60 ? p.content.substring(0, 60) + '...' : p.content;
+            html += '<div style="background:#fafafa; border:1px solid #eee; border-radius:12px; padding:12px 14px; margin-bottom:10px;">';
+            html += '<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">';
+            html += '<div style="font-size:14px; font-weight:600; color:#333; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + p.name.replace(/</g, '&lt;') + '</div>';
+            html += '<div style="font-size:11px; color:#bbb; flex-shrink:0; margin-left:8px;">' + timeStr + '</div>';
+            html += '</div>';
+            html += '<div style="font-size:12px; color:#888; line-height:1.4; margin-bottom:10px; word-break:break-all; white-space:pre-wrap; max-height:60px; overflow:hidden;">' + preview.replace(/</g, '&lt;') + '</div>';
+            html += '<div style="display:flex; gap:8px;">';
+            html += '<button onclick="loadOfflinePreset(\'' + type + '\',' + i + ')" style="flex:1; padding:7px; background:#e8f5e9; color:#43a047; border:none; border-radius:8px; font-size:12px; cursor:pointer; font-weight:500;">✓ 应用</button>';
+            html += '<button onclick="deleteOfflinePreset(\'' + type + '\',' + i + ')" style="padding:7px 12px; background:#fff0f0; color:#e57373; border:none; border-radius:8px; font-size:12px; cursor:pointer; font-weight:500;">删除</button>';
+            html += '</div>';
+            html += '</div>';
+        }
+    }
+
+    html += '</div></div>';
+    modal.innerHTML = html;
+    document.body.appendChild(modal);
+}
+
+/**
+ * 加载指定预设到输入框
+ */
+function loadOfflinePreset(type, index) {
+    const presets = getOfflinePresets(type);
+    const p = presets[index];
+    if (!p) return;
+
+    const textareaId = type === 'preset' ? 'offline-custom-preset' : 'offline-custom-bubble-css';
+    document.getElementById(textareaId).value = p.content;
+
+    // 关闭弹窗
+    const modal = document.getElementById('offline-preset-modal');
+    if (modal) modal.remove();
+
+    showToast('已加载预设：' + p.name);
+}
+
+/**
+ * 删除指定预设
+ */
+function deleteOfflinePreset(type, index) {
+    const presets = getOfflinePresets(type);
+    const p = presets[index];
+    if (!p) return;
+
+    if (!confirm('确定删除预设「' + p.name + '」吗？')) return;
+
+    presets.splice(index, 1);
+    setOfflinePresets(type, presets);
+
+    // 刷新弹窗
+    showOfflinePresetList(type);
+    showToast('已删除预设');
+}
+
 function clearOfflineChatHistory() {
     if (!offlineModeCharId) return;
     if (!confirm('确定要清空线下聊天记录吗？此操作不可恢复。')) return;
@@ -58655,7 +58966,8 @@ ${rolePersona}
 - 内容要有细节和画面感，比如具体吃了什么、看到了什么、和谁说了什么话
 - 可以有前后跳跃、想到哪写到哪的感觉，不需要严格的逻辑结构
 - 可以夹杂一些内心独白、自问自答
-- 字数在800-2000字左右，不要太短也不要刻意凑字数`;
+- 字数在800-2000字左右，不要太短也不要刻意凑字数
+- 【重要】不要在日记正文开头或任何位置写日期、时间、标题（如"2025年1月1日"、"周一"、"Day X"等），系统会自动添加日期，你只需要写日记内容本身`;
 
         // 构建 user prompt
         let userPromptParts = [];
