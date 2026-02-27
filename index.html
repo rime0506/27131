@@ -785,6 +785,14 @@
                     <div style="color: #999; font-size: 12px;">查看 user_id 和订阅状态</div>
                     <div class="setting-arrow">›</div>
                 </div>
+                <div class="setting-item" onclick="document.getElementById('mc-console-switch').click()">
+                    <div class="setting-item-text">📱 移动端控制台</div>
+                    <div style="color: #999; font-size: 12px;">实时查看日志输出，方便手机调试</div>
+                    <label class="ios-switch" onclick="event.stopPropagation()">
+                        <input type="checkbox" id="mc-console-switch" onchange="window._mcEnableConsole(this.checked)" />
+                        <span class="slider"></span>
+                    </label>
+                </div>
             </div>
 
             <!-- API 设置 折叠卡片 -->

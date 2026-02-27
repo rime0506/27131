@@ -1,3 +1,379 @@
+// ==================== 📱 移动端实时控制台 (MobileConsole) ====================
+// 拦截 console 输出，在页面上显示浮动控制台，方便手机端调试
+(function() {
+    const MC_MAX_LOGS = 500;
+    const mcLogs = [];
+    let mcVisible = false;
+    let mcFilter = 'all'; // all | log | warn | error | info
+    let mcSearchText = '';
+    let mcPaused = false;
+    let mcPanel = null;
+    let mcFab = null;
+    let mcUnread = 0;
+
+    // 保存原始 console 方法
+    const _origLog = console.log.bind(console);
+    const _origWarn = console.warn.bind(console);
+    const _origError = console.error.bind(console);
+    const _origInfo = console.info.bind(console);
+    const _origDebug = console.debug.bind(console);
+
+    function formatArg(arg) {
+        if (arg === null) return 'null';
+        if (arg === undefined) return 'undefined';
+        if (typeof arg === 'string') return arg;
+        if (arg instanceof Error) return `${arg.name}: ${arg.message}\n${arg.stack || ''}`;
+        if (typeof arg === 'object') {
+            try { return JSON.stringify(arg, null, 2); }
+            catch (e) { return String(arg); }
+        }
+        return String(arg);
+    }
+
+    function addMcLog(level, args) {
+        const entry = {
+            id: Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            time: new Date(),
+            level: level,
+            text: Array.from(args).map(formatArg).join(' ')
+        };
+        mcLogs.push(entry);
+        if (mcLogs.length > MC_MAX_LOGS) mcLogs.splice(0, mcLogs.length - MC_MAX_LOGS);
+
+        if (!mcVisible) {
+            mcUnread++;
+            updateFabBadge();
+        }
+        if (mcVisible && !mcPaused) {
+            appendLogEntry(entry);
+            autoScrollLogs();
+        }
+    }
+
+    // 拦截 console
+    console.log = function() { _origLog.apply(console, arguments); addMcLog('log', arguments); };
+    console.warn = function() { _origWarn.apply(console, arguments); addMcLog('warn', arguments); };
+    console.error = function() { _origError.apply(console, arguments); addMcLog('error', arguments); };
+    console.info = function() { _origInfo.apply(console, arguments); addMcLog('info', arguments); };
+    console.debug = function() { _origDebug.apply(console, arguments); addMcLog('debug', arguments); };
+
+    // 捕获全局错误
+    window.addEventListener('error', function(e) {
+        addMcLog('error', [`[GlobalError] ${e.message}`, `at ${e.filename}:${e.lineno}:${e.colno}`]);
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+        addMcLog('error', [`[UnhandledPromise] ${e.reason}`]);
+    });
+
+    const MC_COLORS = {
+        log: { bg: 'transparent', color: '#333', border: 'transparent' },
+        info: { bg: '#e8f4fd', color: '#0d6efd', border: '#b6d4fe' },
+        warn: { bg: '#fff8e1', color: '#b8860b', border: '#ffe082' },
+        error: { bg: '#fdecea', color: '#d32f2f', border: '#f5c6cb' },
+        debug: { bg: '#f3e5f5', color: '#7b1fa2', border: '#ce93d8' }
+    };
+
+    function getTimeStr(d) {
+        return d.toTimeString().split(' ')[0] + '.' + String(d.getMilliseconds()).padStart(3, '0');
+    }
+
+    function escHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function createLogEntryHtml(entry) {
+        const c = MC_COLORS[entry.level] || MC_COLORS.log;
+        const levelIcon = { log: '📝', info: 'ℹ️', warn: '⚠️', error: '❌', debug: '🔍' }[entry.level] || '📝';
+        const textEsc = escHtml(entry.text);
+        // 如果文本超过200字符，截断并支持展开
+        const isLong = entry.text.length > 200;
+        const shortText = isLong ? escHtml(entry.text.substring(0, 200)) + '...' : textEsc;
+
+        return `<div class="mc-log-entry" data-level="${entry.level}" data-id="${entry.id}" style="padding:6px 10px;border-bottom:1px solid #f0f0f0;font-size:12px;line-height:1.5;background:${c.bg};border-left:3px solid ${c.border};word-break:break-all;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+                <span style="color:${c.color};font-weight:600;font-size:11px;">${levelIcon} ${entry.level.toUpperCase()}</span>
+                <span style="color:#aaa;font-size:10px;font-family:monospace;">${getTimeStr(entry.time)}</span>
+            </div>
+            <div class="mc-log-text" style="color:${c.color};font-family:'SF Mono',Menlo,Consolas,monospace;font-size:11.5px;white-space:pre-wrap;${isLong ? 'cursor:pointer;' : ''}" ${isLong ? `onclick="this.textContent=this.getAttribute('data-full')" data-full="${textEsc.replace(/"/g, '&quot;')}"` : ''}>${shortText}</div>
+        </div>`;
+    }
+
+    function appendLogEntry(entry) {
+        if (!mcPanel) return;
+        const container = mcPanel.querySelector('#mc-log-container');
+        if (!container) return;
+        // 过滤检查
+        if (mcFilter !== 'all' && entry.level !== mcFilter) return;
+        if (mcSearchText && !entry.text.toLowerCase().includes(mcSearchText.toLowerCase())) return;
+        container.insertAdjacentHTML('beforeend', createLogEntryHtml(entry));
+    }
+
+    function autoScrollLogs() {
+        if (!mcPanel) return;
+        const container = mcPanel.querySelector('#mc-log-container');
+        if (container) {
+            requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
+        }
+    }
+
+    function renderAllLogs() {
+        if (!mcPanel) return;
+        const container = mcPanel.querySelector('#mc-log-container');
+        if (!container) return;
+        const filtered = mcLogs.filter(e => {
+            if (mcFilter !== 'all' && e.level !== mcFilter) return false;
+            if (mcSearchText && !e.text.toLowerCase().includes(mcSearchText.toLowerCase())) return false;
+            return true;
+        });
+        container.innerHTML = filtered.map(createLogEntryHtml).join('');
+        autoScrollLogs();
+    }
+
+    function updateFilterBtns() {
+        if (!mcPanel) return;
+        mcPanel.querySelectorAll('.mc-filter-btn').forEach(btn => {
+            const f = btn.getAttribute('data-filter');
+            btn.style.background = f === mcFilter ? '#ffb3d1' : '#f5f5f5';
+            btn.style.color = f === mcFilter ? '#fff' : '#666';
+            btn.style.fontWeight = f === mcFilter ? '600' : '400';
+        });
+    }
+
+    function updateFabBadge() {
+        if (!mcFab) return;
+        const badge = mcFab.querySelector('.mc-badge');
+        if (badge) {
+            if (mcUnread > 0) {
+                badge.textContent = mcUnread > 99 ? '99+' : mcUnread;
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    }
+
+    function getLogCounts() {
+        const counts = { all: mcLogs.length, log: 0, info: 0, warn: 0, error: 0 };
+        mcLogs.forEach(e => { if (counts[e.level] !== undefined) counts[e.level]++; });
+        return counts;
+    }
+
+    function updateCountBadges() {
+        if (!mcPanel) return;
+        const counts = getLogCounts();
+        mcPanel.querySelectorAll('.mc-filter-btn').forEach(btn => {
+            const f = btn.getAttribute('data-filter');
+            const countSpan = btn.querySelector('.mc-count');
+            if (countSpan && counts[f] !== undefined) {
+                countSpan.textContent = counts[f];
+            }
+        });
+    }
+
+    function createPanel() {
+        if (mcPanel) { mcPanel.remove(); mcPanel = null; }
+
+        mcPanel = document.createElement('div');
+        mcPanel.id = 'mc-console-panel';
+        mcPanel.style.cssText = `position:fixed;bottom:0;left:0;right:0;height:55vh;background:#fff;z-index:99999;display:flex;flex-direction:column;box-shadow:0 -4px 20px rgba(0,0,0,0.15);border-top-left-radius:16px;border-top-right-radius:16px;transition:transform 0.3s cubic-bezier(0.4,0,0.2,1);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;`;
+
+        // 头部拖拽条 + 工具栏
+        mcPanel.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:center;padding:8px 0 4px;cursor:grab;" id="mc-drag-handle">
+                <div style="width:40px;height:4px;background:#ddd;border-radius:2px;"></div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 12px 8px;">
+                <div style="font-size:14px;font-weight:600;color:#333;">📱 控制台</div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <button id="mc-btn-pause" onclick="window._mcTogglePause()" style="padding:4px 10px;background:#f5f5f5;border:1px solid #e0e0e0;border-radius:6px;font-size:11px;cursor:pointer;color:#666;">⏸ 暂停</button>
+                    <button onclick="window._mcClearLogs()" style="padding:4px 10px;background:#fff0f0;border:1px solid #fcc;border-radius:6px;font-size:11px;cursor:pointer;color:#d32f2f;">🗑 清空</button>
+                    <button onclick="window._mcExportLogs()" style="padding:4px 10px;background:#f0f4ff;border:1px solid #d8e2f8;border-radius:6px;font-size:11px;cursor:pointer;color:#5b7ddb;">📤 导出</button>
+                    <button onclick="window._mcHideConsole()" style="width:28px;height:28px;background:#f5f5f5;border:1px solid #e0e0e0;border-radius:50%;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;">✕</button>
+                </div>
+            </div>
+            <div style="display:flex;gap:4px;padding:0 12px 8px;flex-wrap:wrap;align-items:center;">
+                <button class="mc-filter-btn" data-filter="all" onclick="window._mcSetFilter('all')" style="padding:3px 8px;border-radius:12px;border:none;font-size:11px;cursor:pointer;">全部 <span class="mc-count">0</span></button>
+                <button class="mc-filter-btn" data-filter="log" onclick="window._mcSetFilter('log')" style="padding:3px 8px;border-radius:12px;border:none;font-size:11px;cursor:pointer;">Log <span class="mc-count">0</span></button>
+                <button class="mc-filter-btn" data-filter="info" onclick="window._mcSetFilter('info')" style="padding:3px 8px;border-radius:12px;border:none;font-size:11px;cursor:pointer;">Info <span class="mc-count">0</span></button>
+                <button class="mc-filter-btn" data-filter="warn" onclick="window._mcSetFilter('warn')" style="padding:3px 8px;border-radius:12px;border:none;font-size:11px;cursor:pointer;">Warn <span class="mc-count">0</span></button>
+                <button class="mc-filter-btn" data-filter="error" onclick="window._mcSetFilter('error')" style="padding:3px 8px;border-radius:12px;border:none;font-size:11px;cursor:pointer;">Error <span class="mc-count">0</span></button>
+                <div style="flex:1;min-width:80px;margin-left:4px;">
+                    <input type="text" id="mc-search-input" placeholder="🔍 搜索日志..." oninput="window._mcOnSearch(this.value)" style="width:100%;padding:4px 8px;border:1px solid #e0e0e0;border-radius:8px;font-size:11px;outline:none;box-sizing:border-box;" />
+                </div>
+            </div>
+            <div id="mc-log-container" style="flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;background:#fafafa;"></div>
+            <div id="mc-status-bar" style="padding:4px 12px;font-size:10px;color:#aaa;border-top:1px solid #f0f0f0;display:flex;justify-content:space-between;background:#fff;">
+                <span id="mc-status-count">共 0 条</span>
+                <span id="mc-status-mem"></span>
+            </div>
+        `;
+
+        document.body.appendChild(mcPanel);
+        updateFilterBtns();
+        updateCountBadges();
+        renderAllLogs();
+        updateStatusBar();
+
+        // 拖拽调整高度
+        let startY = 0, startH = 0, isDragging = false;
+        const handle = mcPanel.querySelector('#mc-drag-handle');
+        handle.addEventListener('touchstart', (e) => {
+            isDragging = true;
+            startY = e.touches[0].clientY;
+            startH = mcPanel.offsetHeight;
+            e.preventDefault();
+        }, { passive: false });
+        document.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            const dy = startY - e.touches[0].clientY;
+            const newH = Math.max(150, Math.min(window.innerHeight * 0.9, startH + dy));
+            mcPanel.style.height = newH + 'px';
+        }, { passive: true });
+        document.addEventListener('touchend', () => { isDragging = false; });
+    }
+
+    function updateStatusBar() {
+        if (!mcPanel) return;
+        const countEl = mcPanel.querySelector('#mc-status-count');
+        const memEl = mcPanel.querySelector('#mc-status-mem');
+        if (countEl) countEl.textContent = `共 ${mcLogs.length} 条`;
+        if (memEl && performance && performance.memory) {
+            const used = (performance.memory.usedJSHeapSize / 1048576).toFixed(1);
+            const total = (performance.memory.totalJSHeapSize / 1048576).toFixed(1);
+            memEl.textContent = `内存: ${used}/${total}MB`;
+        }
+    }
+
+    function createFab() {
+        if (mcFab) return;
+        mcFab = document.createElement('div');
+        mcFab.id = 'mc-fab';
+        mcFab.style.cssText = `position:fixed;bottom:80px;right:12px;width:44px;height:44px;background:linear-gradient(135deg,#ffb3d1,#ff8fbc);border-radius:50%;z-index:99998;display:none;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 3px 12px rgba(255,143,188,0.4);font-size:20px;user-select:none;-webkit-user-select:none;touch-action:none;transition:transform 0.2s;`;
+        mcFab.innerHTML = `<span style="pointer-events:none;">🖥</span><span class="mc-badge" style="display:none;position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;background:#ff3b30;color:#fff;border-radius:9px;font-size:10px;font-weight:600;align-items:center;justify-content:center;padding:0 4px;pointer-events:none;"></span>`;
+        mcFab.onclick = () => { window._mcShowConsole(); };
+        document.body.appendChild(mcFab);
+
+        // 拖拽移动FAB
+        let fabDragging = false, fabStartX = 0, fabStartY = 0, fabOrigX = 0, fabOrigY = 0, fabMoved = false;
+        mcFab.addEventListener('touchstart', (e) => {
+            fabDragging = true; fabMoved = false;
+            fabStartX = e.touches[0].clientX; fabStartY = e.touches[0].clientY;
+            const rect = mcFab.getBoundingClientRect();
+            fabOrigX = rect.left; fabOrigY = rect.top;
+            mcFab.style.transition = 'none';
+            e.preventDefault();
+        }, { passive: false });
+        document.addEventListener('touchmove', (e) => {
+            if (!fabDragging) return;
+            const dx = e.touches[0].clientX - fabStartX;
+            const dy = e.touches[0].clientY - fabStartY;
+            if (Math.abs(dx) > 5 || Math.abs(dy) > 5) fabMoved = true;
+            const nx = Math.max(0, Math.min(window.innerWidth - 44, fabOrigX + dx));
+            const ny = Math.max(0, Math.min(window.innerHeight - 44, fabOrigY + dy));
+            mcFab.style.left = nx + 'px'; mcFab.style.top = ny + 'px';
+            mcFab.style.right = 'auto'; mcFab.style.bottom = 'auto';
+        }, { passive: true });
+        document.addEventListener('touchend', () => {
+            if (!fabDragging) return;
+            fabDragging = false;
+            mcFab.style.transition = 'transform 0.2s';
+            if (fabMoved) {
+                // 吸附到最近的边
+                const rect = mcFab.getBoundingClientRect();
+                const centerX = rect.left + 22;
+                if (centerX < window.innerWidth / 2) {
+                    mcFab.style.left = '12px'; mcFab.style.right = 'auto';
+                } else {
+                    mcFab.style.left = 'auto'; mcFab.style.right = '12px';
+                }
+            } else {
+                // 没有拖拽移动 → 视为点击，打开控制台
+                window._mcShowConsole();
+            }
+        });
+    }
+
+    // 全局方法暴露
+    window._mcShowConsole = function() {
+        mcVisible = true; mcUnread = 0; updateFabBadge();
+        if (mcFab) mcFab.style.display = 'none';
+        createPanel();
+    };
+    window._mcHideConsole = function() {
+        mcVisible = false;
+        if (mcPanel) { mcPanel.remove(); mcPanel = null; }
+        if (mcFab && localStorage.getItem('mc_console_enabled') === 'true') {
+            mcFab.style.display = 'flex';
+        }
+    };
+    window._mcTogglePause = function() {
+        mcPaused = !mcPaused;
+        const btn = mcPanel && mcPanel.querySelector('#mc-btn-pause');
+        if (btn) {
+            btn.textContent = mcPaused ? '▶ 继续' : '⏸ 暂停';
+            btn.style.background = mcPaused ? '#e8f5e9' : '#f5f5f5';
+            btn.style.color = mcPaused ? '#2e7d32' : '#666';
+        }
+    };
+    window._mcSetFilter = function(f) {
+        mcFilter = f;
+        updateFilterBtns();
+        renderAllLogs();
+    };
+    window._mcOnSearch = function(val) {
+        mcSearchText = val;
+        renderAllLogs();
+    };
+    window._mcClearLogs = function() {
+        mcLogs.length = 0;
+        renderAllLogs();
+        updateCountBadges();
+        updateStatusBar();
+    };
+    window._mcExportLogs = function() {
+        const text = mcLogs.map(e => `[${getTimeStr(e.time)}] [${e.level.toUpperCase()}] ${e.text}`).join('\n');
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `console_logs_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    // 启用/禁用控制台
+    window._mcEnableConsole = function(enabled) {
+        localStorage.setItem('mc_console_enabled', enabled ? 'true' : 'false');
+        if (enabled) {
+            createFab();
+            if (mcFab) mcFab.style.display = 'flex';
+        } else {
+            if (mcFab) mcFab.style.display = 'none';
+            if (mcPanel) { mcPanel.remove(); mcPanel = null; }
+            mcVisible = false;
+        }
+    };
+
+    // 页面加载后检查是否已启用
+    function mcInit() {
+        createFab();
+        if (localStorage.getItem('mc_console_enabled') === 'true') {
+            if (mcFab) mcFab.style.display = 'flex';
+        }
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', mcInit);
+    } else {
+        mcInit();
+    }
+
+    // 定时更新状态栏和计数
+    setInterval(() => {
+        if (mcVisible) { updateCountBadges(); updateStatusBar(); }
+    }, 3000);
+
+})();
+// ==================== END 移动端实时控制台 ====================
+
 // 全局异常兜底：防止未捕获的错误导致页面假死
 window.addEventListener('error', function(e) {
     console.error('[GlobalError]', e.message, e.filename, e.lineno);
@@ -1243,6 +1619,10 @@ async function saveFinanceData(key, value) {
             if (notifSwitch) notifSwitch.checked = notifEnabled;
             if (debugSwitch) debugSwitch.checked = debugEnabled;
             if (keepaliveSwitch) keepaliveSwitch.checked = keepaliveEnabled;
+            
+            // 同步移动端控制台开关状态
+            const mcConsoleSwitch = document.getElementById('mc-console-switch');
+            if (mcConsoleSwitch) mcConsoleSwitch.checked = localStorage.getItem('mc_console_enabled') === 'true';
             
             // 如果保活已开启，等待用户交互后启动
             if (keepaliveEnabled) {
@@ -48026,7 +48406,9 @@ ${recentSummary}
     const maxWords = settings.maxWords || 500;
     const customPreset = settings.customPreset || '';
     
-    // 构建系统提示词
+    // 线上聊天记录将在消息数组中以时间线方式合并（不再作为摘要）
+    
+        // 构建系统提示词
     const systemPrompt = `# 角色指令 (System Instruction) - 线下模式
 你现在的身份是【${friendName}】，正在与【${myName}】进行**线下真实见面**。
 ⚠️ 重要：你的名字是${friendName}，你不是${myName}！你是独立的角色，有自己的性格和想法。
@@ -48043,9 +48425,10 @@ ${char.relationships && char.relationships.length > 0 ? `
 3. **关联角色/NPC**：
 ${char.relationships.map(r => `   - ${r.targetName}（${r.relation}）${r.desc ? '：' + r.desc : ''}`).join('\n')}` : ''}
 ${loreContext ? `\n## 📖 世界书设定\n${loreContext}` : ''}
-${summaryMemoryContext}
+${summaryMemoryContext || ''}
 ${groupMemoryContext || ''}
 ${momentsContextText || ''}
+
 ${antiRepeatContext || ''}
 
 ## 🎭 行为准则 (Action Rules)
@@ -48079,25 +48462,29 @@ ${antiRepeatContext || ''}
    **错误示例（不要这样，所有内容堆在一起）：**
    ${friendName}微笑着走到${myName}身边，轻轻拍了拍他的肩膀。"你今天看起来心情不错呢。"她眨了眨眼，眼神中带着一丝调皮。
    
-   **重要：回复中必须包含换行符（\\n），让内容分段显示，不要所有文字堆在一起！**
+   **重要：回复中必须包含换行符（\n），让内容分段显示，不要所有文字堆在一起！**
+9. **【⚠️ 绝对禁止输出前缀标记】**：
+   - 回复中**严禁**出现任何方括号前缀，如 [微信消息]、[线下]、[旁白] 等
+   - 直接输出角色的动作描写和对话内容，不要添加任何元标记
 
-${normalChatHistory.length > 0 ? `## ★ 线上线下统一世界观
-注意：你和对方的互动包含【微信聊天】和【线下见面】两个场景，它们是同一段关系。
-- 带有 [微信消息] 前缀的消息是你们在微信上的聊天
-- 没有前缀的消息是线下见面时的互动
+${normalChatHistory.length > 0 ? `
+## ★ 线上线下统一世界观
+你和对方的互动包含【微信聊天】和【线下见面】两个场景，它们发生在同一段关系中，时间线是连贯的。
+- 对话记录中会出现"（之后你们在微信上聊天）"或"（之后你们线下见面了）"这样的场景切换提示
+- 这些提示仅供你理解上下文，你的回复中绝对不要出现这类提示
 - 你的记忆是完整的，不管是微信聊天还是线下见面的事你都清楚记得
-- 请根据最近的对话内容自然地回复，不要割裂线上线下的关系` : ''}
+- 请根据最近的对话内容自然地回复，不要割裂线上线下的关系
+- 当前场景是【线下见面】，请以线下互动的方式回复` : ''}
 ${customPreset ? `\n## 📌 额外设定\n${customPreset}` : ''}`;
 
     // ★ 线上线下统一时间线：合并微信聊天和线下对话，按时间排序
+    // 🔧 场景切换时在 user 消息中自然嵌入提示，不使用任何前缀标记
     const contextCount = char.context_message_count || 20;
     
-    // 🔧 修复空回复：对线上消息做与 triggerAiReply 相同的清洗处理
+    // 处理线上消息（与 triggerAiReply 相同的清洗逻辑）
     const onlineMsgs = normalChatHistory
         .filter(h => {
-            // 过滤掉系统事件消息（戳一戳、打开APP、改昵称等），它们不是对话内容
             if (h.role === 'system') return false;
-            // 过滤掉视频通话消息
             if (h.isVideoCall) return false;
             return true;
         })
@@ -48105,7 +48492,7 @@ ${customPreset ? `\n## 📌 额外设定\n${customPreset}` : ''}`;
             const role = h.role === 'user' ? 'user' : 'assistant';
             let content = (h.content || '').trim();
             
-            // 转账消息 → 转为可读文字
+            // 转账消息
             if (h.type === 'transfer') {
                 try {
                     const td = JSON.parse(content);
@@ -48114,20 +48501,12 @@ ${customPreset ? `\n## 📌 额外设定\n${customPreset}` : ''}`;
                     content = role === 'user' 
                         ? `对方给你转账了 ¥${td.amount}，备注：${td.desc || '转账'}${sLabel ? '，' + sLabel : ''}`
                         : `你给对方转账了 ¥${td.amount}，备注：${td.desc || '转账'}${sLabel ? '，' + sLabel : ''}`;
-                } catch(e) {
-                    content = '一笔转账';
-                }
+                } catch(e) { content = '一笔转账'; }
             }
-            // 位置分享消息
             else if (h.type === 'location') {
-                try {
-                    const ld = JSON.parse(content);
-                    content = `分享了位置：${ld.name || '某地点'}`;
-                } catch(e) {
-                    content = '分享了一个位置';
-                }
+                try { const ld = JSON.parse(content); content = `分享了位置：${ld.name || '某地点'}`; }
+                catch(e) { content = '分享了一个位置'; }
             }
-            // 特殊卡片消息
             else if (content.startsWith('[couple_avatar_card]')) {
                 content = role === 'assistant' ? '发送了情头邀请' : '回应了情头邀请';
             } else if (content.startsWith('[emei_order]') || content.startsWith('[emei_share]')) {
@@ -48138,71 +48517,101 @@ ${customPreset ? `\n## 📌 额外设定\n${customPreset}` : ''}`;
                 try {
                     const sd = JSON.parse(content);
                     content = sd.isGift ? `送了一个购物礼物：${sd.items}` : `发送了购物订单：${sd.items}`;
-                } catch(e) {
-                    content = '发送了购物卡片';
-                }
+                } catch(e) { content = '发送了购物卡片'; }
             }
-            // 撤回消息
             else if (h.type === 'recall' || content === '((RECALL))') {
                 content = '撤回了一条消息';
             }
             
-            // 图片/语音/表情替换
             content = content
                 .replace(/\[img:[^\]]*\]/g, '[图片]')
                 .replace(/\[imgcard:[^\]]*\]/g, '[图片]')
                 .replace(/\[voice:[^\]]*\]/g, '[语音]')
                 .replace(/\[sticker:[^\]]*\]/g, '[表情]');
             
-            return {
-                role: role,
-                content: content,
-                time: h.time || 0,
-                _isOnline: true
-            };
+            return { role, content, time: h.time || 0, _isOnline: true };
         })
-        .filter(h => h.content && h.content.trim()); // 过滤空内容消息
-        
-    const offlineMsgs = offlineModeHistory.map(h => ({
-        role: h.role === 'user' ? 'user' : 'assistant',
-        content: h.content || '',
-        time: h.time || 0,
-        _isOnline: false
-    })).filter(h => h.content && h.content.trim()); // 过滤空内容消息
+        .filter(h => h.content && h.content.trim());
     
-    // 线上线下合并后按时间排序，统一取最近 contextCount 条（与上下文条数设置一致）
+    const offlineMsgs = offlineModeHistory
+        .filter(h => h.content && h.content.trim())
+        .map(h => ({
+            role: h.role === 'user' ? 'user' : 'assistant',
+            content: h.content,
+            time: h.time || 0,
+            _isOnline: false
+        }));
+    
+    // 合并后按时间排序，取最近 contextCount 条
     const mergedTimeline = [...onlineMsgs, ...offlineMsgs]
         .sort((a, b) => (a.time || 0) - (b.time || 0))
         .slice(-contextCount);
     
-    // 🔧 修复空回复：合并连续同角色消息，避免某些API不支持连续相同role导致返回空
-    const mergedMessages = [];
-    for (const msg of mergedTimeline) {
-        const prefix = msg._isOnline ? '[微信消息] ' : '';
-        const contentWithPrefix = prefix + msg.content;
+    // 🔧 场景切换提示：当 online↔offline 切换时，在第一条 user 消息中嵌入自然过渡
+    // 不使用任何前缀标记，而是把过渡文字合并到 user 消息的开头
+    let lastMode = null; // null | 'online' | 'offline'
+    const timelineWithTransitions = [];
+    
+    for (let i = 0; i < mergedTimeline.length; i++) {
+        const msg = mergedTimeline[i];
+        const currentMode = msg._isOnline ? 'online' : 'offline';
         
+        // 检测场景切换
+        if (lastMode !== null && currentMode !== lastMode) {
+            // 场景变了，找到切换后第一条 user 消息并嵌入过渡提示
+            if (msg.role === 'user') {
+                const transition = currentMode === 'online' 
+                    ? '（之后你们在微信上聊天）\n'
+                    : '（之后你们线下见面了）\n';
+                timelineWithTransitions.push({
+                    role: msg.role,
+                    content: transition + msg.content,
+                    _isOnline: msg._isOnline
+                });
+            } else {
+                // 如果切换后第一条是 assistant，则插入一条过渡 user 消息
+                const transition = currentMode === 'online'
+                    ? '（之后你们切换到微信聊天了）'
+                    : '（之后你们线下又碰面了）';
+                timelineWithTransitions.push({
+                    role: 'user',
+                    content: transition,
+                    _isOnline: msg._isOnline
+                });
+                timelineWithTransitions.push({
+                    role: msg.role,
+                    content: msg.content,
+                    _isOnline: msg._isOnline
+                });
+            }
+        } else {
+            timelineWithTransitions.push({
+                role: msg.role,
+                content: msg.content,
+                _isOnline: msg._isOnline
+            });
+        }
+        lastMode = currentMode;
+    }
+    
+    // 合并连续同角色消息
+    const mergedMessages = [];
+    for (const msg of timelineWithTransitions) {
         const prev = mergedMessages[mergedMessages.length - 1];
         if (prev && prev.role === msg.role) {
-            // 合并连续同角色消息：追加到上一条
-            prev.content += '\n' + contentWithPrefix;
+            prev.content += '\n' + msg.content;
         } else {
-            mergedMessages.push({
-                role: msg.role,
-                content: contentWithPrefix
-            });
+            mergedMessages.push({ role: msg.role, content: msg.content });
         }
     }
     
-    // 构建消息数组（统一时间线）
+    // 构建消息数组
     const messages = [
         { role: 'system', content: systemPrompt },
-        ...mergedMessages.map(h => ({
-            role: h.role,
-            content: h.content
-        }))
+        ...mergedMessages
     ];
     
-    // 🔧 修复空回复：确保最后一条消息是 user，否则API会认为已回复完毕，返回空 choices
+    // 🔧 确保最后一条消息是 user
     if (messages.length > 1) {
         const lastMsg = messages[messages.length - 1];
         if (lastMsg.role === 'assistant') {
@@ -48214,7 +48623,7 @@ ${customPreset ? `\n## 📌 额外设定\n${customPreset}` : ''}`;
         }
     }
     
-    // 🔧 修复空回复：确保至少有一条 user 消息
+    // 🔧 确保至少有一条 user 消息
     const hasUserMsg = messages.some(m => m.role === 'user');
     if (!hasUserMsg) {
         console.warn('[generateOfflineReply] ⚠️ 没有user消息，添加默认消息');
@@ -48224,7 +48633,7 @@ ${customPreset ? `\n## 📌 额外设定\n${customPreset}` : ''}`;
         });
     }
     
-    console.log('[generateOfflineReply] 📤 发送消息数:', messages.length, '条');
+        console.log('[generateOfflineReply] 📤 发送消息数:', messages.length, '条');
     console.log('[generateOfflineReply] 消息角色序列:', messages.map(m => m.role).join(' → '));
 
     const reply = await callAI(messages);
