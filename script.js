@@ -476,20 +476,22 @@ function applyKeyboardLayout() {
     
     // 键盘弹起时：把聊天窗口高度缩到可视视口高度，整个底栏都在键盘上方
     // 键盘收起时：恢复原始状态（CSS bottom:0 自动撑满）
+    // 🔧 修复：standalone 模式 CSS 有 height:auto!important，普通内联样式会被覆盖
+    //    必须用 setProperty(..., 'important') 才能正确设置高度
     const targets = document.querySelectorAll('.chat-window');
     targets.forEach(el => {
         if (el.style.display !== 'none' && el.style.display !== '') {
             if (isKeyboardUp) {
                 // 对齐可视视口（PWA全屏模式下可能有偏移）
                 el.style.top = vpTop + 'px';
-                el.style.height = vp.height + 'px';
+                el.style.setProperty('height', vp.height + 'px', 'important'); // 🔧 用 !important 覆盖 standalone 的 height:auto!important
                 el.style.bottom = 'auto'; // 键盘弹起时用 height 控制，禁用 bottom
                 // 标记键盘状态，CSS 会去掉安全区域 padding
                 el.classList.add('keyboard-up');
             } else {
                 // 🔧 恢复原始状态：清除所有内联样式，让 CSS 的 top:0+bottom:0 自动撑满
                 el.style.top = '';
-                el.style.height = '';
+                el.style.removeProperty('height'); // 🔧 用 removeProperty 确保清除 !important 声明
                 el.style.bottom = '';
                 el.classList.remove('keyboard-up');
             }
@@ -12184,25 +12186,29 @@ ${(() => {
                     console.log('[acceptMessageReply] ✅ 查手机活动已标记为已通知，共标记', markedCount, '条');
                 }
                 
-                // ★ 将查手机事件写入长期记忆，确保角色永久记住此事
-                try {
-                    const smsUserName = smsUserChar ? smsUserChar.name : (myChar.nick || myChar.name);
-                    const fpMemoryContent = `${smsUserName}偷偷拿了${targetChar.name}的手机，做了以下事情：${_fpNpcLinesForMemorySms.map(l => l.trim().replace(/^[→←]\s*/, '')).join('；')}。${targetChar.name}已经发现并做出了反应。`;
-                    await db.chat_summaries.add({
-                        accountId: accountId,
-                        chatType: 'private',
-                        chatId: String(targetChar.id),
-                        time: Date.now(),
-                        content: fpMemoryContent,
-                        messageCount: 0,
-                        timeRange: '',
-                        keywords: ['查手机', '冒充', '手机被动'],
-                        startTime: Date.now(),
-                        endTime: Date.now()
-                    });
-                    console.log('[acceptMessageReply] ✅ 查手机事件已写入长期记忆');
-                } catch (memErr) {
-                    console.warn('[acceptMessageReply] 写入查手机长期记忆失败:', memErr);
+                // ★ 将查手机事件写入长期记忆（仅首次有新标记时写入，避免重复）
+                if (markedCount > 0) {
+                    try {
+                        const smsUserName = smsUserChar ? smsUserChar.name : (myChar.nick || myChar.name);
+                        const fpMemoryContent = `${smsUserName}偷偷拿了${targetChar.name}的手机，做了以下事情：${_fpNpcLinesForMemorySms.map(l => l.trim().replace(/^[→←]\s*/, '')).join('；')}。${targetChar.name}已经发现并做出了反应。`;
+                        await db.chat_summaries.add({
+                            accountId: accountId,
+                            chatType: 'private',
+                            chatId: String(targetChar.id),
+                            time: Date.now(),
+                            content: fpMemoryContent,
+                            messageCount: 0,
+                            timeRange: '',
+                            keywords: ['查手机', '冒充', '手机被动'],
+                            startTime: Date.now(),
+                            endTime: Date.now()
+                        });
+                        console.log('[acceptMessageReply] ✅ 查手机事件已写入长期记忆');
+                    } catch (memErr) {
+                        console.warn('[acceptMessageReply] 写入查手机长期记忆失败:', memErr);
+                    }
+                } else {
+                    console.log('[acceptMessageReply] ℹ️ 查手机活动已全部通知过，跳过重复写入长期记忆');
                 }
             } catch (fpErr) {
                 console.warn('[acceptMessageReply] 标记fpNotified失败:', fpErr);
@@ -22823,24 +22829,28 @@ ${char.foreign_lang_mode ? `【语言规则 - 最高优先级！每条消息必�
                             console.log('[triggerAutoChat] ✅ 查手机活动已标记为已通知，共标记', markedCount, '条');
                         }
                         
-                        // ★ 将查手机事件写入长期记忆，确保角色永久记住此事
-                        try {
-                            const fpMemoryContent = `${userName}偷偷拿了${char.name}的手机，做了以下事情：${_fpNpcLinesForMemoryAuto.map(l => l.trim().replace(/^[→←]\s*/, '')).join('；')}。${char.name}已经发现并做出了反应。`;
-                            await db.chat_summaries.add({
-                                accountId: accountId,
-                                chatType: 'private',
-                                chatId: String(char.id),
-                                time: Date.now(),
-                                content: fpMemoryContent,
-                                messageCount: 0,
-                                timeRange: '',
-                                keywords: ['查手机', '冒充', '手机被动'],
-                                startTime: Date.now(),
-                                endTime: Date.now()
-                            });
-                            console.log('[triggerAutoChat] ✅ 查手机事件已写入长期记忆');
-                        } catch (memErr) {
-                            console.warn('[triggerAutoChat] 写入查手机长期记忆失败:', memErr);
+                        // ★ 将查手机事件写入长期记忆（仅首次有新标记时写入，避免重复）
+                        if (markedCount > 0) {
+                            try {
+                                const fpMemoryContent = `${userName}偷偷拿了${char.name}的手机，做了以下事情：${_fpNpcLinesForMemoryAuto.map(l => l.trim().replace(/^[→←]\s*/, '')).join('；')}。${char.name}已经发现并做出了反应。`;
+                                await db.chat_summaries.add({
+                                    accountId: accountId,
+                                    chatType: 'private',
+                                    chatId: String(char.id),
+                                    time: Date.now(),
+                                    content: fpMemoryContent,
+                                    messageCount: 0,
+                                    timeRange: '',
+                                    keywords: ['查手机', '冒充', '手机被动'],
+                                    startTime: Date.now(),
+                                    endTime: Date.now()
+                                });
+                                console.log('[triggerAutoChat] ✅ 查手机事件已写入长期记忆');
+                            } catch (memErr) {
+                                console.warn('[triggerAutoChat] 写入查手机长期记忆失败:', memErr);
+                            }
+                        } else {
+                            console.log('[triggerAutoChat] ℹ️ 查手机活动已全部通知过，跳过重复写入长期记忆');
                         }
                     } catch (fpErr) {
                         console.warn('[triggerAutoChat] 标记fpNotified失败:', fpErr);
@@ -32857,28 +32867,33 @@ ${checkResult.checkResult}
                             if (freshCharForFp.fp_moments_by_user) {
                                 fpUpdatePayload.fp_moments_by_user = freshCharForFp.fp_moments_by_user;
                             }
-                            await db.characters.update(targetCharId, fpUpdatePayload);
-                            console.log('[triggerAiReply] ✅ 查手机活动已标记为已通知，共标记', markedCount, '条');
-                        }
-                        
-                        // ★ 将查手机事件写入长期记忆，确保角色永久记住此事
-                        try {
-                            const fpMemoryContent = `${userName}偷偷拿了${char.name}的手机，做了以下事情：${_fpNpcLinesForMemory.map(l => l.trim().replace(/^[→←]\s*/, '')).join('；')}。${char.name}已经发现并做出了反应。`;
-                            await db.chat_summaries.add({
-                                accountId: accountId,
-                                chatType: 'private',
-                                chatId: String(targetCharId),
-                                time: Date.now(),
-                                content: fpMemoryContent,
-                                messageCount: 0,
-                                timeRange: '',
-                                keywords: ['查手机', '冒充', '手机被动'],
-                                startTime: Date.now(),
-                                endTime: Date.now()
-                            });
-                            console.log('[triggerAiReply] ✅ 查手机事件已写入长期记忆');
-                        } catch (memErr) {
-                            console.warn('[triggerAiReply] 写入查手机长期记忆失败:', memErr);
+                            // 🔧 只有真正有新标记的消息时才更新DB和写入记忆
+                            if (markedCount > 0) {
+                                await db.characters.update(targetCharId, fpUpdatePayload);
+                                console.log('[triggerAiReply] ✅ 查手机活动已标记为已通知，共标记', markedCount, '条');
+                            
+                                // ★ 将查手机事件写入长期记忆，确保角色永久记住此事（仅首次通知时写入）
+                                try {
+                                    const fpMemoryContent = `${userName}偷偷拿了${char.name}的手机，做了以下事情：${_fpNpcLinesForMemory.map(l => l.trim().replace(/^[→←]\s*/, '')).join('；')}。${char.name}已经发现并做出了反应。`;
+                                    await db.chat_summaries.add({
+                                        accountId: accountId,
+                                        chatType: 'private',
+                                        chatId: String(targetCharId),
+                                        time: Date.now(),
+                                        content: fpMemoryContent,
+                                        messageCount: 0,
+                                        timeRange: '',
+                                        keywords: ['查手机', '冒充', '手机被动'],
+                                        startTime: Date.now(),
+                                        endTime: Date.now()
+                                    });
+                                    console.log('[triggerAiReply] ✅ 查手机事件已写入长期记忆');
+                                } catch (memErr) {
+                                    console.warn('[triggerAiReply] 写入查手机长期记忆失败:', memErr);
+                                }
+                            } else {
+                                console.log('[triggerAiReply] ℹ️ 查手机活动已全部通知过，跳过重复写入长期记忆');
+                            }
                         }
                     } catch (fpErr) {
                         console.warn('[triggerAiReply] 标记fpNotified失败:', fpErr);
