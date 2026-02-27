@@ -484,6 +484,22 @@
                     <div class="custom-item-text" style="text-align:center; color:#5b7ddb;">📋 查看类名参考</div>
                 </div>
             </div>
+            <!-- CSS预设保存/加载 -->
+            <div style="margin-top:12px; padding-top:12px; border-top:1px solid #eee;">
+                <div style="font-size:13px; font-weight:500; margin-bottom:8px; color:#333;">💾 CSS预设</div>
+                <div style="font-size:11px; color:#999; margin-bottom:10px;">保存当前CSS为预设，方便一键切换或复用</div>
+                <div style="display:flex; gap:8px; margin-bottom:8px;">
+                    <div class="custom-item" onclick="saveGlobalCSSPreset()" style="flex:1; background:#e8f0ff; justify-content:center;">
+                        <div class="custom-item-text" style="text-align:center; color:#007aff;">💾 保存为预设</div>
+                    </div>
+                    <div class="custom-item" onclick="loadGlobalCSSPreset()" style="flex:1; background:#e8fae8; justify-content:center;">
+                        <div class="custom-item-text" style="text-align:center; color:#34c759;">📂 加载预设</div>
+                    </div>
+                </div>
+                <div id="global-css-preset-list" style="display:none;">
+                    <!-- 动态生成预设列表 -->
+                </div>
+            </div>
             <div class="custom-edit-tip" style="margin-top:8px; font-size:11px; color:#bbb; line-height:1.5;">
                 提示：CSS代码会在保存设置后持久生效。可用浏览器F12查看元素类名。<br>
                 点击"预览聊天效果"可以实时查看CSS在聊天页面的效果。

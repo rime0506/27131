@@ -2170,9 +2170,14 @@ body.standalone-mode .chat-detail-page {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 12px 16px;
+            height: 88px;
+            padding-top: 44px;
+            padding-bottom: 10px;
+            padding-left: 16px;
+            padding-right: 16px;
             background: #fff;
             border-bottom: 1px solid #f0f0f0;
+            flex-shrink: 0;
         }
         .fp-baidu-header-title {
             font-size: 17px;

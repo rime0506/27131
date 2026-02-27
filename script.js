@@ -2549,6 +2549,7 @@ async function saveFinanceData(key, value) {
                     data: {}
                 };
                 
+                let skippedLsKeys = [];
                 if (includeLocal) {
                     // ===== 1. 逐表导出主数据库，每个表之间让出主线程避免长时间阻塞 =====
                     const tables = [
@@ -2628,7 +2629,6 @@ async function saveFinanceData(key, value) {
                     updateLoadingText('正在收集数据', '正在读取: 本地设置');
                     exportData.localStorage = {};
                     const MAX_LS_VALUE_SIZE = 5 * 1024 * 1024; // 单个 localStorage 值超过 5MB 则跳过
-                    let skippedLsKeys = [];
                     for (let i = 0; i < localStorage.length; i++) {
                         const key = localStorage.key(i);
                         const value = localStorage.getItem(key);
@@ -23334,7 +23334,7 @@ ${char.foreign_lang_mode ? `【语言规则 - 最高优先级！每条消息必�
                 try {
                     const history = getChatHistory(char, accountId);
                     if (history && history.length > 0) {
-                        const recent = history.slice(-5).map(m => {
+                        const recent = history.slice(-20).map(m => {
                             const role = m.role === 'char' ? char.name : userName;
                             return `${role}: ${m.content}`;
                         }).join('\n');
@@ -36028,6 +36028,159 @@ function showLorebookPage() {
     }
 
     /**
+     * 保存当前全局自定义CSS为预设
+     * 将textarea中的CSS代码以命名预设的方式持久化到IndexedDB
+     */
+    async function saveGlobalCSSPreset() {
+        const cssCode = document.getElementById('custom-css-input')?.value?.trim();
+        if (!cssCode) {
+            showToast('当前没有CSS代码可保存');
+            return;
+        }
+
+        const presetName = prompt('请输入预设名称：');
+        if (!presetName || !presetName.trim()) return;
+
+        try {
+            const existing = await db.dexiData.get('globalCSSPresets');
+            const presets = existing ? existing.value : [];
+
+            // 检查是否重名
+            if (presets.find(p => p.name === presetName.trim())) {
+                if (!confirm(`预设"${presetName.trim()}"已存在，是否覆盖？`)) return;
+                const idx = presets.findIndex(p => p.name === presetName.trim());
+                if (idx !== -1) presets.splice(idx, 1);
+            }
+
+            presets.push({
+                name: presetName.trim(),
+                cssCode: cssCode,
+                time: Date.now()
+            });
+
+            await db.dexiData.put({ key: 'globalCSSPresets', value: presets });
+            showToast(`CSS预设"${presetName.trim()}"已保存！`);
+        } catch (e) {
+            console.error('[全局CSS] 保存预设失败:', e);
+            showToast('保存预设失败');
+        }
+    }
+
+    /**
+     * 加载全局CSS预设列表
+     * 从IndexedDB读取已保存的CSS预设并展示为可操作列表
+     */
+    async function loadGlobalCSSPreset() {
+        try {
+            const existing = await db.dexiData.get('globalCSSPresets');
+            const presets = existing ? existing.value : [];
+
+            if (presets.length === 0) {
+                showToast('暂无保存的CSS预设');
+                return;
+            }
+
+            const listEl = document.getElementById('global-css-preset-list');
+            if (!listEl) return;
+
+            // 切换显示/隐藏
+            if (listEl.style.display !== 'none' && listEl.innerHTML !== '') {
+                listEl.style.display = 'none';
+                return;
+            }
+
+            let html = '';
+            for (let i = 0; i < presets.length; i++) {
+                const p = presets[i];
+                const timeStr = p.time ? new Date(p.time).toLocaleDateString() : '';
+                const preview = (p.cssCode || '').substring(0, 50).replace(/</g, '&lt;') + (p.cssCode?.length > 50 ? '...' : '');
+
+                html += `
+                    <div style="display:flex; align-items:center; padding:10px 12px; background:#fff; border:1px solid #e8e8e8; border-radius:10px; margin-bottom:8px;">
+                        <div style="flex:1; min-width:0;">
+                            <div style="font-size:13px; font-weight:500; color:#333; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p.name}</div>
+                            <div style="font-size:10px; color:#aaa; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${preview} ${timeStr ? '· ' + timeStr : ''}</div>
+                        </div>
+                        <div style="display:flex; gap:6px; flex-shrink:0; margin-left:8px;">
+                            <div onclick="applyGlobalCSSPreset(${i})" style="padding:5px 12px; font-size:11px; background:#007aff; color:#fff; border-radius:6px; cursor:pointer; font-weight:500;">应用</div>
+                            <div onclick="deleteGlobalCSSPreset(${i})" style="padding:5px 10px; font-size:11px; background:#f5f5f5; color:#ff3b30; border-radius:6px; cursor:pointer;">删除</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            listEl.innerHTML = html;
+            listEl.style.display = 'block';
+        } catch (e) {
+            console.error('[全局CSS] 加载预设失败:', e);
+            showToast('加载预设失败');
+        }
+    }
+
+    /**
+     * 应用指定的全局CSS预设
+     * 将预设中的CSS代码回填到textarea并立即生效
+     */
+    async function applyGlobalCSSPreset(index) {
+        try {
+            const existing = await db.dexiData.get('globalCSSPresets');
+            const presets = existing ? existing.value : [];
+            if (index < 0 || index >= presets.length) return;
+
+            const p = presets[index];
+            const cssInput = document.getElementById('custom-css-input');
+            if (cssInput) {
+                cssInput.value = p.cssCode || '';
+            }
+
+            // 立即应用CSS
+            applyCustomCSS();
+
+            showToast(`已应用CSS预设"${p.name}"`);
+
+            // 隐藏预设列表
+            const listEl = document.getElementById('global-css-preset-list');
+            if (listEl) listEl.style.display = 'none';
+        } catch (e) {
+            console.error('[全局CSS] 应用预设失败:', e);
+            showToast('应用预设失败');
+        }
+    }
+
+    /**
+     * 删除指定的全局CSS预设
+     * 从IndexedDB中移除并刷新预设列表
+     */
+    async function deleteGlobalCSSPreset(index) {
+        try {
+            const existing = await db.dexiData.get('globalCSSPresets');
+            const presets = existing ? existing.value : [];
+            if (index < 0 || index >= presets.length) return;
+
+            const name = presets[index].name;
+            if (!confirm(`确定要删除CSS预设"${name}"吗？`)) return;
+
+            presets.splice(index, 1);
+            await db.dexiData.put({ key: 'globalCSSPresets', value: presets });
+
+            showToast(`已删除CSS预设"${name}"`);
+
+            // 刷新列表
+            const listEl = document.getElementById('global-css-preset-list');
+            if (listEl) {
+                listEl.style.display = 'none';
+                listEl.innerHTML = '';
+            }
+            if (presets.length > 0) {
+                loadGlobalCSSPreset();
+            }
+        } catch (e) {
+            console.error('[全局CSS] 删除预设失败:', e);
+            showToast('删除预设失败');
+        }
+    }
+
+    /**
      * 显示CSS类名参考弹窗
      * 列出聊天页面各区域的CSS类名，方便用户编写自定义CSS
      */
@@ -40254,6 +40407,30 @@ async function generateReplyToUserComment(momentId, charName, userComment) {
         
         if (!targetChar) return;
         
+        // 获取用户与角色的关系上下文
+        let relationContext = '';
+        try {
+            if (myChar) {
+                relationContext += `\n【${myName}（回复你的人）的信息】\n`;
+                relationContext += `名字：${myName}\n`;
+                if (myChar.description) relationContext += `设定：${myChar.description}\n`;
+            }
+            if (targetChar.remark) {
+                relationContext += `${targetChar.name} 对 ${myName} 的备注/称呼：${targetChar.remark}\n`;
+            }
+            // 最近聊天记录
+            const history = getChatHistory(targetChar, accountId);
+            if (history && history.length > 0) {
+                const recent = history.slice(-10).map(m => {
+                    const role = m.role === 'char' ? targetChar.name : myName;
+                    return `${role}: ${m.content}`;
+                }).join('\n');
+                relationContext += `\n【${targetChar.name}与${myName}的最近聊天】\n${recent}\n`;
+            }
+        } catch (e) {
+            console.warn('[朋友圈回复] 获取关系上下文失败:', e);
+        }
+        
         // 找到角色之前在这条朋友圈下的评论
         const charPrevComments = (moment.comments || [])
             .filter(c => {
@@ -40264,9 +40441,11 @@ async function generateReplyToUserComment(momentId, charName, userComment) {
             .join('；');
         
         const prompt = `你是 ${targetChar.name}，你在 ${myName} 的朋友圈下评论了："${charPrevComments}"
+${relationContext}
 ${myName} 回复了你："${userComment}"
 
 请以 ${targetChar.name} 的身份，用简短自然的语气再回复 ${myName}（3-20字，可以用表情、语气词）。
+注意：你和 ${myName} 是认识的，请根据你们的关系亲密程度来回复。
 
 人设参考：${targetChar.description || targetChar.personality || '普通朋友'}
 
@@ -40315,6 +40494,36 @@ async function generateMomentOwnerReply(momentId, userName, userComment) {
         const myChar = await db.characters.get(parseInt(currentMyCharId));
         const myName = myChar?.name || userName;
         
+        // 获取用户与角色的关系上下文
+        const accountId = getCurrentAccountId();
+        let relationContext = '';
+        try {
+            // 用户信息
+            if (myChar) {
+                relationContext += `\n【${myName}（评论者）的信息】\n`;
+                relationContext += `名字：${myName}\n`;
+                if (myChar.description) relationContext += `设定：${myChar.description}\n`;
+            }
+            // 角色备注（角色给用户的备注）
+            if (ownerChar.remark_by_user && ownerChar.remark_by_user[accountId]) {
+                relationContext += `${myName} 给 ${ownerChar.name} 的备注：${ownerChar.remark_by_user[accountId]}\n`;
+            }
+            if (ownerChar.remark) {
+                relationContext += `${ownerChar.name} 对 ${myName} 的备注/称呼：${ownerChar.remark}\n`;
+            }
+            // 最近聊天记录
+            const history = getChatHistory(ownerChar, accountId);
+            if (history && history.length > 0) {
+                const recent = history.slice(-10).map(m => {
+                    const role = m.role === 'char' ? ownerChar.name : myName;
+                    return `${role}: ${m.content}`;
+                }).join('\n');
+                relationContext += `\n【${ownerChar.name}与${myName}的最近聊天】\n${recent}\n`;
+            }
+        } catch (e) {
+            console.warn('[朋友圈回复] 获取关系上下文失败:', e);
+        }
+        
         // 获取已有的所有评论，用于上下文
         const existingComments = (moment.comments || []).map(c => {
             const replyPart = c.replyTo ? ` 回复 ${c.replyTo}` : '';
@@ -40322,13 +40531,14 @@ async function generateMomentOwnerReply(momentId, userName, userComment) {
         }).join('\n');
         
         const promptText = `你是 ${ownerChar.name}，你发了一条朋友圈："${moment.content}"
-
+${relationContext}
 ${existingComments ? `朋友圈下已有的评论：\n${existingComments}\n` : ''}
 ${myName} 评论了你的朋友圈："${userComment}"
 
 请以 ${ownerChar.name} 的身份回复 ${myName} 的评论。要求：
 - 简短自然（3-30字）
 - 符合你的性格和说话风格
+- 符合你和 ${myName} 之间的关系和亲密程度
 - 可以用表情、语气词
 - 像真人回复朋友圈评论一样随意
 
