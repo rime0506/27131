@@ -4060,7 +4060,7 @@ async function saveFinanceData(key, value) {
         // 关闭查手机的独立WeChat页面
         function closeFpWechat() {
             // 关闭所有fp子页面
-            ['fp-service-page', 'fp-wallet-page', 'fp-balance-page', 'fp-bill-page', 'fp-moments-page'].forEach(id => {
+            ['fp-service-page', 'fp-wallet-page', 'fp-balance-page', 'fp-bill-page', 'fp-moments-page', 'fp-baidu-page'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) { el.style.display = 'none'; el.classList.remove('slide-in', 'active'); }
             });
@@ -4077,6 +4077,232 @@ async function saveFinanceData(key, value) {
             document.getElementById('findphone-desktop').style.display = 'flex';
         }
         
+        // ===== 查手机 - 百度搜索历史功能 =====
+        
+        /**
+         * 打开百度搜索历史页面
+         */
+        async function openFindPhoneBaidu() {
+            const baiduPage = document.getElementById('fp-baidu-page');
+            baiduPage.style.display = 'flex';
+            
+            // 加载已有的搜索记录
+            await loadBaiduSearchHistory();
+        }
+        
+        /**
+         * 关闭百度搜索历史页面
+         */
+        function closeFpBaidu() {
+            const baiduPage = document.getElementById('fp-baidu-page');
+            baiduPage.style.transform = 'scale(0.95)';
+            baiduPage.style.opacity = '0';
+            setTimeout(() => {
+                baiduPage.style.display = 'none';
+                baiduPage.style.transform = '';
+                baiduPage.style.opacity = '';
+            }, 200);
+            // 回到查手机桌面
+            document.getElementById('findphone-desktop').style.display = 'flex';
+        }
+        
+        /**
+         * 加载百度搜索历史（从角色数据中读取）
+         */
+        async function loadBaiduSearchHistory() {
+            const roleId = findPhoneTargetRoleId;
+            if (!roleId) return;
+            
+            const roleChar = await db.characters.get(parseInt(roleId));
+            if (!roleChar) return;
+            
+            const searchData = roleChar.generated_baidu_search || [];
+            renderBaiduSearchList(searchData);
+        }
+        
+        /**
+         * 渲染百度搜索记录列表
+         */
+        function renderBaiduSearchList(searchList) {
+            const container = document.getElementById('fp-baidu-content');
+            
+            if (!searchList || searchList.length === 0) {
+                container.innerHTML = `
+                    <div class="fp-baidu-empty">
+                        <svg viewBox="0 0 24 24" style="width:48px; height:48px; stroke:#ddd; fill:none; stroke-width:1.5;">
+                            <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <div style="margin-top:12px; color:#ccc; font-size:14px;">暂无搜索记录</div>
+                        <div style="margin-top:4px; color:#ddd; font-size:12px;">点击下方按钮生成</div>
+                    </div>`;
+                return;
+            }
+            
+            let html = '<div class="fp-baidu-section-title">搜索历史</div><div class="fp-baidu-list">';
+            searchList.forEach((item, idx) => {
+                const topClass = idx === 0 ? 'top1' : idx === 1 ? 'top2' : idx === 2 ? 'top3' : '';
+                html += `
+                    <div class="fp-baidu-item">
+                        <div class="fp-baidu-item-index ${topClass}">${idx + 1}</div>
+                        <div class="fp-baidu-item-body">
+                            <div class="fp-baidu-item-keyword">${escapeHtml(item.keyword)}</div>
+                            <div class="fp-baidu-item-meta">
+                                <span>${escapeHtml(item.time || '')}</span>
+                                ${item.tag ? `<span class="fp-baidu-item-tag">${escapeHtml(item.tag)}</span>` : ''}
+                            </div>
+                        </div>
+                    </div>`;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        }
+        
+        /**
+         * 生成百度搜索记录 - 调用主API，根据角色和用户最近50条聊天记录生成10条搜索记录
+         */
+        async function generateBaiduSearchHistory() {
+            const roleId = findPhoneTargetRoleId;
+            const accountId = findPhoneTargetAccountId;
+            if (!roleId) {
+                showToast?.('角色数据异常') || alert('角色数据异常');
+                return;
+            }
+            
+            // 获取角色信息
+            const roleChar = await db.characters.get(parseInt(roleId));
+            if (!roleChar) {
+                showToast?.('角色数据异常') || alert('角色数据异常');
+                return;
+            }
+            
+            // 设置按钮为加载状态
+            const btn = document.getElementById('fp-baidu-generate-btn');
+            const btnText = document.getElementById('fp-baidu-generate-text');
+            btn.disabled = true;
+            btnText.innerHTML = '<span class="loading-spinner-sm"></span> 生成中...';
+            
+            try {
+                // 获取用户角色信息
+                const myChar = accountId ? await db.characters.get(parseInt(accountId)) : null;
+                
+                // 获取角色与用户最近50条聊天记录
+                const chatHistory = getChatHistory(roleChar, accountId);
+                const recent50 = chatHistory.slice(-50);
+                const recentChatsText = recent50.map(m => 
+                    `${m.role === 'user' ? (myChar?.name || '用户') : roleChar.name}: ${m.content}`
+                ).join('\n');
+                
+                // 获取世界书上下文
+                let loreContext = '';
+                const lorebookIds = roleChar.lorebookIds || (roleChar.lorebookId ? [roleChar.lorebookId] : []);
+                if (typeof getLorebookContext === 'function') {
+                    loreContext = await getLorebookContext(lorebookIds, roleChar.name);
+                }
+                
+                // 构建AI提示
+                const prompt = `你是一个数据生成助手。请根据以下角色信息和聊天记录，生成这个角色在百度上的搜索历史记录。
+
+【角色信息】
+名字：${roleChar.name}
+${roleChar.nick ? `昵称：${roleChar.nick}` : ''}
+设定：${roleChar.description || '无'}
+
+${roleChar.identity ? `【虚拟身份】
+手机：${roleChar.identity.phone || '未知'}
+住址：${roleChar.identity.address || '未知'}
+` : ''}
+
+${myChar ? `【与用户的关系】
+用户名：${myChar.name}
+用户设定：${myChar.description || '无'}
+` : ''}
+
+${recentChatsText ? `【与用户的最近聊天记录（真实数据，共${recent50.length}条）】
+${recentChatsText}
+` : ''}
+
+${loreContext ? `【世界观背景】
+${loreContext}
+` : ''}
+
+请生成以下JSON数据（严格按照格式返回，不要包含markdown代码块标记）：
+{
+    "searches": [
+        {
+            "keyword": "搜索关键词",
+            "time": "搜索时间，如：今天 09:30 / 昨天 22:15 / 3天前",
+            "tag": "可选标签，如：购物/情感/学习/工作/娱乐/生活/健康"
+        }
+    ]
+}
+
+生成要求：
+1. 生成恰好10条搜索记录
+2. 搜索内容必须完全贴合角色的性格、身份、设定和世界观
+3. 要根据聊天记录中提到的话题、情绪、事件来推断角色可能会搜索什么
+4. 搜索内容要真实自然，像真实的人在百度上搜索一样（包含错别字、口语化表达也可以）
+5. 时间从最近到最远排列
+6. 要有多样性：可以包含情感类、日常生活类、兴趣爱好类、工作学习类等
+7. 如果聊天记录中有特别的事件或情绪（比如吵架、表白、约会等），搜索记录应该体现出角色对这些事情的关注`;
+
+                // 调用主API
+                const result = await callAI([
+                    { role: 'system', content: '你是一个JSON数据生成助手，只返回纯JSON格式，不要包含任何markdown标记或其他文字。' },
+                    { role: 'user', content: prompt }
+                ], 0.7);
+                
+                console.log('[generateBaiduSearchHistory] AI返回:', result);
+                
+                // 解析结果
+                let searchData;
+                try {
+                    let cleanResult = result.trim();
+                    if (cleanResult.startsWith('```')) {
+                        cleanResult = cleanResult.replace(/```json?\n?/g, '').replace(/```$/g, '').trim();
+                    }
+                    searchData = JSON.parse(cleanResult);
+                } catch (e) {
+                    console.error('[generateBaiduSearchHistory] 解析JSON失败:', e);
+                    // 使用默认数据
+                    searchData = {
+                        searches: [
+                            { keyword: '今天天气', time: '今天 10:00', tag: '生活' },
+                            { keyword: roleChar.name + ' 日常', time: '昨天 20:30', tag: '生活' }
+                        ]
+                    };
+                }
+                
+                const searches = searchData.searches || searchData.search || [];
+                
+                // 保存到角色数据
+                const freshChar = await db.characters.get(parseInt(roleId));
+                if (freshChar) {
+                    freshChar.generated_baidu_search = searches;
+                    freshChar.generated_baidu_search_at = Date.now();
+                    await safeCharacterPut(freshChar);
+                }
+                
+                // 渲染搜索列表
+                renderBaiduSearchList(searches);
+                
+                if (typeof showToast === 'function') {
+                    showToast('搜索记录已生成');
+                }
+                
+            } catch (err) {
+                console.error('[generateBaiduSearchHistory] 生成失败:', err);
+                if (typeof showToast === 'function') {
+                    showToast('生成失败：' + (err.message || '未知错误'));
+                } else {
+                    alert('生成失败：' + (err.message || '未知错误'));
+                }
+            } finally {
+                // 恢复按钮状态
+                btn.disabled = false;
+                btnText.innerHTML = '生成搜索记录';
+            }
+        }
+
         // 查手机独立WeChat的tab切换
         async function switchFpWechatTab(index) {
             const tabs = document.querySelectorAll('#fp-wechat-page .wechat-tab-item');
@@ -29599,7 +29825,7 @@ messages:
         }
 
         async function triggerAiReply(additionalSystemInfo = null) {
-            console.log('[triggerAiReply] ⚡ 触发 AI 回复');
+            console.log('[triggerAiReply] ⚡ 触发 AI 回复', window._isRegenerateMode ? '(重回模式)' : '');
             
             // 🔧 防止重复调用API（超时15秒自动解锁，防止手机端锁死）
             if (window._isGeneratingReply) {
@@ -29607,6 +29833,7 @@ messages:
                 if (elapsed < 15000) { // 15秒内认为是正常生成中
                     console.log('[triggerAiReply] 正在生成回复中，忽略重复调用 (已等待' + Math.round(elapsed/1000) + '秒)');
                     showToast('正在生成回复中，请稍候...');
+                    window._isRegenerateMode = false; // 清除重回标记
                     return;
                 }
                 // 超过15秒，强制重置锁（防止手机端卡死）
@@ -29619,6 +29846,7 @@ messages:
             
             // ★ 查手机NPC模式：NPC视角回复（NPC以为是角色在发消息）
             if (window._fpChatMode && window._fpAccountId && String(window._fpAccountId).startsWith('fp_npc_')) {
+                window._isRegenerateMode = false; // 清除重回标记
                 await triggerFpNpcReply();
                 return;
             }
@@ -30747,12 +30975,34 @@ ${togetherListenInfo.isPlaying ? '正在播放中...' : '已暂停'}
                 if (messages.length > 1) {
                     const lastMsg = messages[messages.length - 1];
                     if (lastMsg.role === 'assistant') {
-                        console.log('[triggerAiReply] ⚠️ 最后一条是角色消息，添加触发消息');
+                        // ★ 区分"重回"模式和"主动聊天/继续"模式
+                        if (window._isRegenerateMode) {
+                            console.log('[triggerAiReply] 🔄 重回模式：重新生成上一条回复');
+                            messages.push({
+                                role: 'user',
+                                content: `[系统指令] 用户对你上一条回复不满意，请你作为${char.name}重新回复。不要重复之前的回复内容，尝试不同的回答方式、语气或角度。回复的对象是之前的对话内容，按照设定的回复条数（${char.reply_min_count || 1}-${char.reply_max_count || 3}条）来回复。`
+                            });
+                        } else {
+                            console.log('[triggerAiReply] ⚠️ 最后一条是角色消息，添加触发消息');
+                            messages.push({
+                                role: 'user',
+                                content: `[系统指令] 对方没有回复，请你作为${char.name}继续这个话题，自然地接着聊。可以是：追问、补充、分享新想法、或者换个相关话题。按照设定的回复条数（${char.reply_min_count || 1}-${char.reply_max_count || 3}条）来回复。`
+                            });
+                        }
+                    }
+                }
+                
+                // ★ 重回模式下：即使最后一条是用户消息，也注入重新生成提示
+                if (window._isRegenerateMode && messages.length > 1) {
+                    const lastMsg = messages[messages.length - 1];
+                    if (lastMsg.role === 'user' && !lastMsg.content?.includes('[系统指令]')) {
                         messages.push({
-                            role: 'user',
-                            content: `[系统指令] 对方没有回复，请你作为${char.name}继续这个话题，自然地接着聊。可以是：追问、补充、分享新想法、或者换个相关话题。按照设定的回复条数（${char.reply_min_count || 1}-${char.reply_max_count || 3}条）来回复。`
+                            role: 'system',
+                            content: `提醒：用户对你之前的回复不满意，请重新回复。不要重复之前的内容，尝试不同的回答方式和角度。`
                         });
                     }
+                    // 清除重回标记
+                    window._isRegenerateMode = false;
                 }
                 
                 // ★ 如果有查手机活动，在消息末尾追加一条系统提醒，确保AI注意到
@@ -33022,6 +33272,8 @@ ${checkResult.checkResult}
                 // 🔧 无论成功还是失败，都要释放锁，允许下次调用
                 window._isGeneratingReply = false;
                 window._isGeneratingReplyTime = 0;
+                // 🔄 清除重回标记
+                window._isRegenerateMode = false;
                 // 🔧 释放角色级共享锁
                 autoChatLocks.delete(targetCharId);
                 if (window._autoChatLockTimes) delete window._autoChatLockTimes[targetCharId];
@@ -33107,6 +33359,7 @@ ${checkResult.checkResult}
             closeChatPanel();
             
             // 重新生成回复（基于删除后的历史记录，用户消息还在）
+            window._isRegenerateMode = true;
             await triggerAiReply();
         }
         
@@ -33195,6 +33448,7 @@ ${checkResult.checkResult}
             closeChatPanel();
             
             // 重新生成群聊回复
+            window._isRegenerateMode = true;
             await triggerAiReply();
         }
 
