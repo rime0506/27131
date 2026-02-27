@@ -491,13 +491,8 @@ body.standalone-mode .chat-detail-page {
             bottom: 0;
             width: 100%;
             background: #ffffff;
-            padding: 100px 24px calc(40px + env(safe-area-inset-bottom, 0px));
             display: none;
             flex-direction: column;
-            gap: 10px;
-            overflow-y: auto;
-            -webkit-overflow-scrolling: touch; /* iOS 平滑滚动 */
-            overscroll-behavior: contain; /* 防止滚动穿透 */
             z-index: 100;
         }
         .custom-page-header {
@@ -511,6 +506,18 @@ body.standalone-mode .chat-detail-page {
             padding: 50px 24px 16px; /* 加高顶栏 */
             background: #fff;
             z-index: 99;
+        }
+        /* 个性化设置页面 - 独立滚动容器（block布局确保手机滚动兼容） */
+        .custom-page-body {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch; /* iOS 平滑滚动 */
+            overscroll-behavior: contain; /* 防止滚动穿透 */
+            padding: 100px 24px calc(40px + env(safe-area-inset-bottom, 0px));
         }
         .custom-page-title {
             font-size: 20px;
