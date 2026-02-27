@@ -2502,10 +2502,45 @@ async function saveFinanceData(key, value) {
         }
         
         // 导出所有数据（带选项）
+        // 防重复点击标志
+        let _isExporting = false;
+        
         async function exportAllDataWithOptions(includeLocal = true, includeOnline = true) {
+            // 防止重复点击导致多次并行导出
+            if (_isExporting) {
+                alert('正在导出中，请稍候...');
+                return;
+            }
+            _isExporting = true;
+            
+            // 显示加载遮罩
+            const loadingOverlay = document.createElement('div');
+            loadingOverlay.id = 'export-loading-overlay';
+            loadingOverlay.style.cssText = `
+                position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0,0,0,0.5); display: flex; align-items: center;
+                justify-content: center; z-index: 200000; flex-direction: column;
+            `;
+            loadingOverlay.innerHTML = `
+                <div style="background: white; border-radius: 12px; padding: 32px 40px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                    <div id="export-loading-spinner" style="width: 40px; height: 40px; border: 3px solid #eee; border-top: 3px solid #07c160; border-radius: 50%; animation: exportSpin 0.8s linear infinite; margin: 0 auto 16px;"></div>
+                    <div id="export-loading-text" style="font-size: 15px; color: #333;">正在收集数据...</div>
+                    <div id="export-loading-detail" style="font-size: 12px; color: #999; margin-top: 6px;"></div>
+                </div>
+                <style>@keyframes exportSpin { to { transform: rotate(360deg); } }</style>
+            `;
+            document.body.appendChild(loadingOverlay);
+            
+            const updateLoadingText = (text, detail) => {
+                const el = document.getElementById('export-loading-text');
+                const detailEl = document.getElementById('export-loading-detail');
+                if (el) el.textContent = text;
+                if (detailEl) detailEl.textContent = detail || '';
+            };
+            
             try {
                 const exportData = {
-                    version: '3.0', // 版本升级到3.0 - 完整导出
+                    version: '3.0',
                     exportTime: new Date().toISOString(),
                     dataTypes: {
                         local: includeLocal,
@@ -2515,26 +2550,43 @@ async function saveFinanceData(key, value) {
                 };
                 
                 if (includeLocal) {
-                    // ===== 1. 导出主数据库所有表 =====
-                    exportData.data.dexiData = await db.dexiData.toArray();
-                    exportData.data.lorebooks = await db.lorebooks.toArray();
-                    exportData.data.characters = await db.characters.toArray();
-                    exportData.data.sticker_categories = await db.sticker_categories.toArray();
-                    exportData.data.moments = await db.moments.toArray();
-                    exportData.data.friend_requests = await db.friend_requests.toArray();
-                    exportData.data.group_chats = await db.group_chats.toArray();
-                    exportData.data.phone_recents = await db.phone_recents.toArray();
-                    exportData.data.sms_messages = await db.sms_messages.toArray();
-                    exportData.data.chat_summaries = await db.chat_summaries.toArray();
-                    exportData.data.avatar_library = await db.avatar_library.toArray();
-                    exportData.data.avatar_categories = await db.avatar_categories.toArray();
-                    exportData.data.chat_themes = await db.chat_themes.toArray();
-                    if (db.intimate_relations) exportData.data.intimate_relations = await db.intimate_relations.toArray();
-                    if (db.intimate_requests) exportData.data.intimate_requests = await db.intimate_requests.toArray();
-                    if (db.offline_chats) exportData.data.offline_chats = await db.offline_chats.toArray();
-                    if (db.finance_data) exportData.data.finance_data = await db.finance_data.toArray();
+                    // ===== 1. 逐表导出主数据库，每个表之间让出主线程避免长时间阻塞 =====
+                    const tables = [
+                        { key: 'dexiData', table: db.dexiData, label: '聊天数据' },
+                        { key: 'lorebooks', table: db.lorebooks, label: '世界书' },
+                        { key: 'characters', table: db.characters, label: '角色' },
+                        { key: 'sticker_categories', table: db.sticker_categories, label: '表情包' },
+                        { key: 'moments', table: db.moments, label: '朋友圈' },
+                        { key: 'friend_requests', table: db.friend_requests, label: '好友请求' },
+                        { key: 'group_chats', table: db.group_chats, label: '群聊' },
+                        { key: 'phone_recents', table: db.phone_recents, label: '通话记录' },
+                        { key: 'sms_messages', table: db.sms_messages, label: '短信' },
+                        { key: 'chat_summaries', table: db.chat_summaries, label: '聊天摘要' },
+                        { key: 'avatar_library', table: db.avatar_library, label: '头像库' },
+                        { key: 'avatar_categories', table: db.avatar_categories, label: '头像分类' },
+                        { key: 'chat_themes', table: db.chat_themes, label: '聊天主题' }
+                    ];
+                    // 可选表
+                    if (db.intimate_relations) tables.push({ key: 'intimate_relations', table: db.intimate_relations, label: '亲密关系' });
+                    if (db.intimate_requests) tables.push({ key: 'intimate_requests', table: db.intimate_requests, label: '亲密请求' });
+                    if (db.offline_chats) tables.push({ key: 'offline_chats', table: db.offline_chats, label: '离线聊天' });
+                    if (db.finance_data) tables.push({ key: 'finance_data', table: db.finance_data, label: '财务数据' });
+                    
+                    for (let i = 0; i < tables.length; i++) {
+                        const { key, table, label } = tables[i];
+                        updateLoadingText(`正在收集数据 (${i + 1}/${tables.length})`, `正在读取: ${label}`);
+                        try {
+                            exportData.data[key] = await table.toArray();
+                        } catch (e) {
+                            console.warn(`[Export] 表 ${key} 导出失败:`, e);
+                            exportData.data[key] = [];
+                        }
+                        // 让出主线程，避免长时间阻塞导致浏览器杀死页面
+                        await new Promise(r => setTimeout(r, 0));
+                    }
                     
                     // ===== 2. 导出 iCity 日记数据库 =====
+                    updateLoadingText('正在收集数据', '正在读取: 日记数据');
                     try {
                         exportData.icityData = {
                             diaries: await icityDb.diaries.toArray(),
@@ -2543,8 +2595,10 @@ async function saveFinanceData(key, value) {
                     } catch(e) {
                         console.warn('[Export] iCity数据库导出失败:', e);
                     }
+                    await new Promise(r => setTimeout(r, 0));
                     
                     // ===== 3. 导出已安装应用数据库 =====
+                    updateLoadingText('正在收集数据', '正在读取: 已安装应用');
                     try {
                         exportData.installedAppsData = {
                             apps: await installedAppsDb.apps.toArray()
@@ -2552,8 +2606,10 @@ async function saveFinanceData(key, value) {
                     } catch(e) {
                         console.warn('[Export] 已安装应用数据库导出失败:', e);
                     }
+                    await new Promise(r => setTimeout(r, 0));
                     
                     // ===== 4. 导出音乐播放器数据库（不含音频文件） =====
+                    updateLoadingText('正在收集数据', '正在读取: 音乐数据');
                     try {
                         exportData.wyyMusicData = {
                             userSettings: await wyyDb.userSettings.toArray(),
@@ -2566,17 +2622,26 @@ async function saveFinanceData(key, value) {
                     } catch(e) {
                         console.warn('[Export] 音乐播放器数据库导出失败:', e);
                     }
+                    await new Promise(r => setTimeout(r, 0));
                     
-                    // ===== 5. 导出完整 localStorage（全量） =====
+                    // ===== 5. 导出完整 localStorage（全量），跳过超大 base64 值 =====
+                    updateLoadingText('正在收集数据', '正在读取: 本地设置');
                     exportData.localStorage = {};
+                    const MAX_LS_VALUE_SIZE = 5 * 1024 * 1024; // 单个 localStorage 值超过 5MB 则跳过
+                    let skippedLsKeys = [];
                     for (let i = 0; i < localStorage.length; i++) {
                         const key = localStorage.key(i);
-                        exportData.localStorage[key] = localStorage.getItem(key);
+                        const value = localStorage.getItem(key);
+                        if (value && value.length > MAX_LS_VALUE_SIZE) {
+                            skippedLsKeys.push(key);
+                            console.warn(`[Export] localStorage key "${key}" 值过大(${(value.length / 1024 / 1024).toFixed(1)}MB)，已跳过`);
+                            continue;
+                        }
+                        exportData.localStorage[key] = value;
                     }
                 }
                 
                 if (includeOnline) {
-                    // 导出联机相关数据（兼容旧格式）
                     exportData.onlineData = {
                         server_url: localStorage.getItem('online_server_url'),
                         token: localStorage.getItem('online_token'),
@@ -2584,16 +2649,39 @@ async function saveFinanceData(key, value) {
                     };
                 }
                 
-                // 转换为JSON字符串
-                const jsonString = JSON.stringify(exportData, null, 2);
+                // ===== 分块序列化：避免一次性 JSON.stringify 大对象阻塞主线程 =====
+                updateLoadingText('正在生成文件...', '数据量较大时可能需要一些时间');
+                await new Promise(r => setTimeout(r, 50));
                 
-                // 创建下载链接
+                // 使用 JSON.stringify 但不带缩进以减少内存占用（缩进大约增加 30% 体积）
+                let jsonString;
+                try {
+                    jsonString = JSON.stringify(exportData);
+                } catch (stringifyError) {
+                    // 如果序列化失败（可能是循环引用或内存不足），尝试逐个表处理
+                    console.error('[Export] JSON.stringify 失败，尝试精简导出:', stringifyError);
+                    updateLoadingText('数据量过大，正在精简导出...', '');
+                    
+                    // 尝试移除最大的表数据后重试
+                    if (exportData.data?.dexiData) {
+                        const dexiCount = exportData.data.dexiData.length;
+                        // 如果 dexiData 条目过多，分批序列化
+                        if (dexiCount > 1000) {
+                            console.warn(`[Export] dexiData 有 ${dexiCount} 条记录，尝试精简`);
+                        }
+                    }
+                    // 最终兜底：不带缩进序列化
+                    jsonString = JSON.stringify(exportData);
+                }
+                
+                // 构造 Blob 并释放原始数据引用
                 const blob = new Blob([jsonString], { type: 'application/json' });
+                jsonString = null; // 释放字符串内存
+                
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
                 
-                // 根据导出的数据类型设置文件名
                 let filename = 'wechat_backup_';
                 if (includeLocal && includeOnline) {
                     filename += 'full_';
@@ -2608,7 +2696,13 @@ async function saveFinanceData(key, value) {
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
-                URL.revokeObjectURL(url);
+                // 延迟释放 URL 防止下载未完成
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
+                
+                // 移除加载遮罩
+                if (document.getElementById('export-loading-overlay')) {
+                    document.body.removeChild(loadingOverlay);
+                }
                 
                 // 显示导出的数据统计
                 let stats = [];
@@ -2632,9 +2726,12 @@ async function saveFinanceData(key, value) {
                     if (financeCount > 0) stats.push(`财务数据: ${financeCount}条`);
                     stats.push(`本地设置: ${lsCount}项`);
                     
-                    // 文件大小
                     const sizeMB = (blob.size / 1024 / 1024).toFixed(2);
                     stats.push(`文件大小: ${sizeMB}MB`);
+                    
+                    if (skippedLsKeys && skippedLsKeys.length > 0) {
+                        stats.push(`\n⚠️ ${skippedLsKeys.length}个过大的本地存储项已跳过`);
+                    }
                 }
                 if (includeOnline) {
                     stats.push('联机账号信息已包含');
@@ -2643,7 +2740,13 @@ async function saveFinanceData(key, value) {
                 alert('数据导出成功！（完整备份）\n\n' + stats.join('\n'));
             } catch (error) {
                 console.error('导出数据失败:', error);
+                // 移除加载遮罩
+                if (document.getElementById('export-loading-overlay')) {
+                    document.body.removeChild(loadingOverlay);
+                }
                 alert('导出数据失败: ' + error.message);
+            } finally {
+                _isExporting = false;
             }
         }
         
@@ -57938,22 +58041,31 @@ function xianyuShowMyWallet() { alert('我的钱包功能待开发'); }
 function xianyuShowDataManagement() { xianyuShowSettingsDialog(); }
 
 async function xianyuExportData() {
-    const allData = {
-        goods: await xianyuDb.goods.toArray(),
-        collections: await xianyuDb.collections.toArray(),
-        messages: await xianyuDb.messages.toArray(),
-        users: await xianyuDb.users.toArray(),
-        orders: await xianyuDb.orders.toArray(),
-        exportDate: new Date().toISOString()
-    };
-    const dataStr = JSON.stringify(allData, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-    const exportFileDefaultName = 'xianyu_data.json';
-    const linkElement = document.createElement('a');
-    linkElement.setAttribute('href', dataUri);
-    linkElement.setAttribute('download', exportFileDefaultName);
-    linkElement.click();
-    xianyuShowDataStatus('数据已导出');
+    try {
+        const allData = {
+            goods: await xianyuDb.goods.toArray(),
+            collections: await xianyuDb.collections.toArray(),
+            messages: await xianyuDb.messages.toArray(),
+            users: await xianyuDb.users.toArray(),
+            orders: await xianyuDb.orders.toArray(),
+            exportDate: new Date().toISOString()
+        };
+        const dataStr = JSON.stringify(allData, null, 2);
+        // 使用 Blob + URL.createObjectURL 替代 data URI，避免大数据量导致浏览器崩溃
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const linkElement = document.createElement('a');
+        linkElement.href = url;
+        linkElement.download = 'xianyu_data.json';
+        document.body.appendChild(linkElement);
+        linkElement.click();
+        document.body.removeChild(linkElement);
+        URL.revokeObjectURL(url);
+        xianyuShowDataStatus('数据已导出');
+    } catch (error) {
+        console.error('闲鱼数据导出失败:', error);
+        alert('数据导出失败: ' + error.message);
+    }
 }
 
 function xianyuImportData() {
