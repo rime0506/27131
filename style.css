@@ -58,46 +58,23 @@ body {
     background-position: center;
     background-repeat: no-repeat;
 }
+/* 🔧 核心修复：统一使用 position:fixed + inset:0 撑满屏幕
+   不再依赖 100vh / 100dvh（在手机浏览器上不可靠，100vh 包含地址栏高度）
+   无论普通浏览器还是 PWA 模式，都用 fixed 定位精确贴合可视区域 */
 .phone {
-    width: 100vw;
-    height: 100vh;
-    height: 100dvh; /* 现代浏览器：动态视口高度，自动排除地址栏/底部工具栏 */
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
     overflow: hidden;
-    position: relative;
     padding: 0 8px;
+    padding-bottom: env(safe-area-inset-bottom, 0px); /* iPhone 底部安全区域 */
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-}
-
-/* PWA 全屏模式：用 fixed + inset 完全撑满，避免 100vh 为地址栏预留空间 */
-@media (display-mode: standalone) {
-    .phone {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        bottom: 0 !important;
-        width: 100vw !important;
-        height: auto !important; /* 让 top/bottom 决定高度，不依赖 vh */
-        margin: 0 !important;
-        padding: 0 8px !important; /* 保持原有的左右 padding */
-    }
-}
-
-/* iOS PWA 模式（navigator.standalone） */
-@supports (-webkit-touch-callout: none) {
-    body.standalone-mode .phone {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        bottom: 0 !important;
-        width: 100vw !important;
-        height: auto !important;
-        margin: 0 !important;
-        padding: 0 8px !important;
-    }
+    margin: 0;
 }
 
 /* PWA 模式下，所有 position:fixed 的全屏页面也要用 inset:0 而不是 height:100% */
@@ -445,7 +422,9 @@ body.standalone-mode .chat-detail-page {
             align-items: center;
             z-index: 20;
             flex-shrink: 0;
-            margin: 0 auto 20px;
+            /* 🔧 底部间距：.phone 已通过 padding-bottom 处理了 safe-area，
+               这里只保留视觉间距 8px，不再额外留 20px 空白 */
+            margin: 0 auto 8px;
             align-self: center;
             overflow: hidden; /* 🔧 防止安卓大字体撑出 */
         }
