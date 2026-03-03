@@ -19,7 +19,7 @@
     // ★ 你的后端服务器地址（就是 server.js 部署的那个地址）
     // 如果前端和后端在同一个域名下，留空字符串 '' 即可
     // 如果不同域名，填完整地址，如 'https://xxx.zeabur.app' （末尾不要加 /）
-    const SERVER_URL = '';
+    const SERVER_URL = 'https://27131.zeabur.app';
     
     // 拼接出完整的 API 地址（你不用管这行）
     const VERIFY_API = SERVER_URL + '/api/activation/verify';
