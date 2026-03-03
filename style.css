@@ -70,36 +70,9 @@ body {
     margin: 0;
 }
 
-/* PWA 模式下，所有 position:fixed 的全屏页面也要用 inset:0 而不是 height:100% */
-@media (display-mode: standalone) {
-    .wechat-page,
-    .chat-window,
-    .setting-page,
-    .custom-page,
-    .phone-page,
-    .entry-editor-page,
-    .sub-page-container,
-    .transfer-modal,
-    .message-page,
-    #sticker-page,
-    .chat-detail-page {
-        height: auto !important;
-    }
-}
-
-body.standalone-mode .wechat-page,
-body.standalone-mode .chat-window,
-body.standalone-mode .setting-page,
-body.standalone-mode .custom-page,
-body.standalone-mode .phone-page,
-body.standalone-mode .entry-editor-page,
-body.standalone-mode .sub-page-container,
-body.standalone-mode .transfer-modal,
-body.standalone-mode .message-page,
-body.standalone-mode #sticker-page,
-body.standalone-mode .chat-detail-page {
-    height: auto !important;
-}
+/* 🔧 已移除 standalone 模式下的 height:auto!important 覆盖规则
+   原因：所有全屏页面已统一使用 top:0;bottom:0 撑满屏幕，无需额外覆盖 height。
+   部分安卓浏览器会将显式的 height:auto 误解为"内容高度"，导致底部漏出桌面壁纸。 */
         
         /* #home-page 样式已移除，以便恢复默认文档流和滚动行为 */
         /* 顶部磨砂小组件 */
@@ -601,6 +574,8 @@ body.standalone-mode .chat-detail-page {
             display: flex;
             align-items: flex-end;
             justify-content: center;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
         .image-picker-card {
             background: #fff;
@@ -612,6 +587,8 @@ body.standalone-mode .chat-detail-page {
             flex-direction: column;
             gap: 0;
             animation: pickerSlideUp 0.25s ease;
+            flex-shrink: 0;
+            margin-top: auto;
         }
         @keyframes pickerSlideUp {
             from { transform: translateY(100%); }
@@ -1382,6 +1359,12 @@ body.standalone-mode .chat-detail-page {
             flex-direction: column;
             animation: appLaunch 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
         }
+        /* 🔧 iOS修复：聊天窗口打开时，只隐藏wechat-page的子元素内容，
+           保留容器本身的白色背景作为安全底层，防止iOS Safari在地址栏
+           收起/展开、页面过渡动画等场景中露出系统桌面 */
+        .wechat-page.content-hidden > * {
+            visibility: hidden;
+        }
         @keyframes appLaunch {
             from { transform: scale(0.8); opacity: 0; }
             to { transform: scale(1); opacity: 1; }
@@ -2141,12 +2124,17 @@ body.standalone-mode .chat-detail-page {
             font-weight: 500;
         }
         .findphone-bottom {
-            position: relative; z-index: 1;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            z-index: 1;
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 16px 0 12px;
-            gap: 12px;
+            padding: 0 0 20px;
+            gap: 6px;
+            pointer-events: none;
         }
         .findphone-owner-label {
             font-size: 12px;
@@ -2156,13 +2144,14 @@ body.standalone-mode .chat-detail-page {
         .findphone-home-bar {
             width: 134px;
             height: 5px;
-            background: rgba(0,0,0,0.18);
-            border-radius: 100px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 3px;
             cursor: pointer;
             transition: background 0.2s;
+            pointer-events: auto;
         }
         .findphone-home-bar:active {
-            background: rgba(0,0,0,0.35);
+            background: rgba(0,0,0,0.5);
         }
         
         /* ===== 查手机 - 百度搜索历史页面（白色INS风） ===== */
@@ -3101,9 +3090,9 @@ body.standalone-mode .keyboard-up .chat-footer {
             color: #000;
             border-bottom-right-radius: 4px; /* 小尾巴效果 */
         }
-        /* 移除原来的三角形尾巴 */
-        .message-row.other .message-content::before,
-        .message-row.self .message-content::after {
+        /* 移除原来的三角形尾巴（仅在默认气泡样式下生效，自定义CSS时不限制伪元素） */
+        .bubble-style-default .message-row.other .message-content::before,
+        .bubble-style-default .message-row.self .message-content::after {
             display: none;
         }
         
@@ -6243,10 +6232,7 @@ body.standalone-mode .keyboard-up .chat-footer {
     right: 0;
     bottom: 0;
     width: 100%;
-    background: #000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    background: #ffffff; /* 🔧 从 #000 改为白色，防止页面过渡时露出黑色/桌面 */
     z-index: 200;
     display: none;
 }
@@ -6299,6 +6285,7 @@ body.standalone-mode .keyboard-up .chat-footer {
     flex: 1;
     overflow-y: auto;
     padding-bottom: 20px;
+    min-height: 0; /* 🔧 flex子元素需要min-height:0才能正确收缩 */
 }
 
 .message-scroll-content::-webkit-scrollbar {
@@ -6701,18 +6688,29 @@ body.standalone-mode .keyboard-up .chat-footer {
 
 /* 底部输入区域 (复用) */
 .message-input-area {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
+    /* 🔧 iOS键盘修复：从 position:absolute 改为 flex 子元素，与 WeChat 的 chat-footer 一致
+       这样键盘弹起时，父容器高度缩小后输入框自然跟着上移 */
     background: rgba(255,255,255,0.9);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     padding: 10px 10px 30px 10px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
     border-top: 0.5px solid rgba(0,0,0,0.1);
     display: flex;
     align-items: flex-end;
     z-index: 101;
+    flex-shrink: 0; /* 键盘弹起时底栏不被压缩 */
+    transition: padding-bottom 0.15s ease;
+}
+
+/* 🔧 键盘弹起时去掉安全区域 padding（与 WeChat 的 .keyboard-up .chat-footer 一致） */
+.keyboard-up .message-input-area {
+    padding-bottom: 0 !important;
+}
+
+/* 🔧 iOS PWA 模式下键盘上方的操作栏遮挡修复 */
+body.standalone-mode .keyboard-up .message-input-area {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 10px) !important;
 }
 
 .message-input-plus {
@@ -7481,344 +7479,6 @@ body.standalone-mode .keyboard-up .chat-footer {
     font-size: 16px;
     color: #333;
 }
-
-/* =================
-   日历页面样式 (Premium Pink Pro)
-   ================= */
-/* 定义局部变量范围 */
-#calendar-page {
-    --cal-bg-color: #FFFAFB; 
-    --cal-card-bg: #FFFFFF;
-    --cal-text-main: #5D5455; 
-    --cal-text-sub: #B0A6A7;
-    --cal-accent-bg: #FFF0F3; 
-    --cal-accent-dark: #D48FA3; 
-    --cal-shadow: 0 20px 60px rgba(212, 143, 163, 0.15), 0 5px 15px rgba(212, 143, 163, 0.05);
-    --cal-radius: 28px;
-    --cal-transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-/* 覆盖 wechat-page 的默认背景，使其透明以显示背后的颜色 */
-#calendar-page.wechat-page {
-    background-color: var(--cal-bg-color) !important;
-    display: none; /* 初始隐藏 */
-    justify-content: center;
-    align-items: center;
-}
-
-/* 隐藏 wechat-header，因为新日历有自己的头部导航 */
-#calendar-page .wechat-header {
-    display: none;
-}
-
-/* 新日历容器 */
-.calendar-wrapper {
-    background: var(--cal-card-bg);
-    width: 380px;
-    max-width: 90%; /* 移动端适配 */
-    height: 540px; /* 固定高度 */
-    padding: 36px;
-    border-radius: var(--cal-radius);
-    box-shadow: var(--cal-shadow);
-    position: relative;
-    border: 1px solid rgba(255, 255, 255, 0.8);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
-
-/* 关闭按钮 (绝对定位在卡片右上角或页面右上角) */
-.calendar-close-btn {
-    position: absolute;
-    top: 50px;
-    right: 20px;
-    width: 40px;
-    height: 40px;
-    background: rgba(255, 255, 255, 0.8);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    z-index: 100;
-    color: var(--cal-text-sub);
-    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-}
-
-/* --- 头部 --- */
-.cal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 24px;
-    flex-shrink: 0;
-}
-
-.current-date-btn {
-    background: transparent;
-    border: none;
-    font-family: 'Playfair Display', serif; /* 如果没有引入字体，会回退 */
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--cal-text-main);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 12px;
-    border-radius: 12px;
-    transition: var(--cal-transition);
-}
-
-.current-date-btn:hover, .current-date-btn.active {
-    background-color: var(--cal-accent-bg);
-    color: var(--cal-accent-dark);
-}
-
-.caret-icon {
-    width: 12px;
-    height: 12px;
-    transition: transform 0.3s;
-    stroke: currentColor;
-    stroke-width: 3;
-    fill: none;
-}
-
-.current-date-btn.active .caret-icon {
-    transform: rotate(180deg);
-}
-
-.nav-btn {
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: var(--cal-transition);
-    color: var(--cal-text-sub);
-}
-
-.nav-btn:hover {
-    background-color: var(--cal-accent-bg);
-    color: var(--cal-accent-dark);
-}
-
-/* --- 核心内容区 --- */
-.cal-main-content {
-    position: relative;
-    flex-grow: 1;
-}
-
-.view-layer {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: var(--cal-card-bg);
-    transition: var(--cal-transition);
-    opacity: 0;
-    visibility: hidden;
-    transform: translateY(10px) scale(0.98);
-}
-
-.view-layer.active {
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0) scale(1);
-    z-index: 10;
-}
-
-/* --- 日历视图 --- */
-.weekdays {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    margin-bottom: 12px;
-}
-.weekdays span {
-    text-align: center;
-    font-size: 11px;
-    color: var(--cal-text-sub);
-    font-weight: 700;
-    letter-spacing: 1px;
-}
-.days {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 8px; 
-}
-.day {
-    aspect-ratio: 1;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 14px;
-    cursor: pointer;
-    border-radius: 50%;
-    transition: var(--cal-transition);
-    color: var(--cal-text-main);
-}
-.day:hover { background-color: #FFFAFB; color: var(--cal-accent-dark); }
-.day.fade { color: #EEE; pointer-events: none; }
-.day.selected {
-    background-color: var(--cal-accent-bg);
-    color: var(--cal-accent-dark);
-    font-weight: 700;
-    box-shadow: 0 4px 10px rgba(255, 200, 210, 0.4);
-}
-.day.today { font-weight: 700; color: var(--cal-accent-dark); }
-.day.today::after {
-    content: ''; position: absolute; bottom: 5px;
-    width: 3px; height: 3px; border-radius: 50%; background: var(--cal-accent-dark);
-}
-.day.selected.today::after { display: none; }
-
-/* --- 选择器视图 --- */
-.selector-view {
-    display: flex;
-    gap: 16px;
-    padding-bottom: 10px;
-}
-
-.month-selector {
-    flex: 1;
-    display: grid;
-    grid-template-columns: 1fr;
-    grid-auto-rows: min-content;
-    gap: 8px;
-    overflow-y: auto;
-    padding-right: 4px;
-}
-
-.sel-month-item {
-    padding: 10px;
-    text-align: center;
-    border-radius: 12px;
-    font-size: 14px;
-    cursor: pointer;
-    transition: var(--cal-transition);
-    border: 1px solid transparent;
-}
-
-.sel-month-item:hover {
-    border-color: var(--cal-accent-bg);
-    background: #FFFAFB;
-}
-
-.sel-month-item.selected {
-    background-color: var(--cal-accent-bg);
-    color: var(--cal-accent-dark);
-    font-weight: 700;
-}
-
-.year-selector {
-    flex: 0.6;
-    overflow-y: scroll;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    height: 100%;
-    border-left: 1px solid #FaFaFa;
-    padding-left: 10px;
-    scrollbar-width: none; 
-}
-.year-selector::-webkit-scrollbar { display: none; }
-
-.sel-year-item {
-    padding: 8px;
-    text-align: center;
-    border-radius: 8px;
-    font-size: 15px;
-    cursor: pointer;
-    transition: .2s;
-    color: var(--cal-text-sub);
-    font-family: 'Playfair Display', serif;
-}
-
-.sel-year-item:hover { color: var(--cal-text-main); }
-
-.sel-year-item.selected {
-    color: var(--cal-accent-dark);
-    font-size: 20px;
-    font-weight: 700;
-    background: rgba(255, 240, 243, 0.5);
-}
-
-/* --- 底部区域 --- */
-.cal-bottom-ui {
-    margin-top: auto; 
-}
-
-.cal-divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, #F5F5F5, transparent);
-    margin: 16px 0;
-}
-
-.cal-time-mode {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 8px;
-    margin-bottom: 12px;
-}
-
-.cal-time-mode .time-mode-title {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 1px;
-    color: var(--cal-text-main);
-}
-
-.cal-time-mode .time-mode-sub {
-    font-size: 11px;
-    color: var(--cal-text-sub);
-    margin-top: 2px;
-}
-
-.time-picker {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 8px;
-    margin-bottom: 20px;
-}
-
-.time-picker.disabled {
-    opacity: 0.5;
-    pointer-events: none;
-}
-
-.time-inputs { display: flex; align-items: center; }
-.time-input {
-    background: transparent; border: none; width: 32px;
-    font-size: 26px; font-family: 'Playfair Display', serif;
-    font-weight: 500; text-align: center; color: var(--cal-text-main);
-    outline: none;
-}
-.time-input:disabled { color: var(--cal-text-sub); }
-.time-label { font-size: 11px; color: var(--cal-text-sub); font-weight: 700; letter-spacing: 1px;}
-.time-seperator { margin: 0 6px; color: var(--cal-accent-dark); font-size: 22px; padding-bottom: 4px; }
-
-.cal-confirm-btn {
-    width: 100%;
-    padding: 14px;
-    background: var(--cal-accent-bg);
-    color: var(--cal-accent-dark);
-    border: none;
-    border-radius: 18px;
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 1px;
-    cursor: pointer;
-    transition: var(--cal-transition);
-}
-.cal-confirm-btn:hover { background: #FFE4E9; transform: translateY(-1px); }
-.cal-confirm-btn:active { transform: scale(0.98); }
 
 /* =================
    电话页面样式 (iPhone 风格)

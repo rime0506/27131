@@ -8,6 +8,7 @@ const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
+const activation = require('./activation-server');
 
 // 配置
 const PORT = process.env.PORT || 3000;
@@ -1978,6 +1979,10 @@ async function startServer() {
     try {
         // 先初始化数据库
         await initDB();
+        
+        // 初始化激活码模块（创建表 + 绑定 API 路由）
+        await activation.init(db);
+        activation.bindRoutes(server, db);
         
         // 再启动 HTTP + WebSocket 服务
         server.listen(PORT, '0.0.0.0', () => {
