@@ -106,16 +106,20 @@
         // 创建遮罩层（阻止操作页面）
         const overlay = document.createElement('div');
         overlay.id = 'activation-overlay';
+        
         overlay.innerHTML = `
             <div class="activation-card">
                 <div class="activation-icon">
-                    <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                         <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                     </svg>
                 </div>
                 <h2 class="activation-title">请输入激活码</h2>
-                <p class="activation-desc">请输入您的激活码以解锁使用</p>
+                <div class="activation-divider">
+                    <span class="activation-divider-dot"></span>
+                </div>
+                <p class="activation-desc">输入激活码以解锁使用</p>
                 <div class="activation-input-wrap">
                     <input 
                         type="text" 
@@ -129,7 +133,7 @@
                 </div>
                 <button id="activation-submit-btn" class="activation-btn">验 证</button>
                 <div id="activation-message" class="activation-message"></div>
-                <p class="activation-hint">激活码可通过QQ机器人获取</p>
+                <p class="activation-hint">激活码可通过 QQ 机器人获取</p>
             </div>
         `;
         
