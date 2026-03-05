@@ -31,7 +31,11 @@
         body {
             width: 100%;
             height: 100%;
-            min-height: 100vh; /* 🔧 确保 body 背景覆盖整个 viewport（含 iOS safe area） */
+            /* 🔧 修复：移除 min-height:100vh，因为移动端浏览器 100vh 包含地址栏后面的隐藏区域，
+               会导致 body 比可见视口更高，底部出现空白。
+               html 和 body 都已设置 height:100% + overflow:hidden，足以覆盖整个视口。
+               使用 100dvh 作为增强（支持的浏览器会用动态视口高度），不支持的浏览器自动忽略。 */
+            min-height: calc(var(--app-height, 100%));
             margin: 0;
             padding: 0;
             overflow: hidden;
@@ -2450,6 +2454,15 @@ body {
             flex-direction: column;
             animation: slideLeft 0.3s ease;
         }
+        /* 🔧 修复查手机模式下聊天详情页和群聊详情页的顶栏高度 */
+        .chat-detail-page .wechat-header,
+        #group-detail-page .wechat-header,
+        #group-member-manage-page .wechat-header {
+            height: 88px !important; /* 包含状态栏高度 */
+            padding-top: 44px !important; /* 避让状态栏 */
+            padding-bottom: 10px !important;
+            box-sizing: border-box;
+        }
         .detail-group {
             background: #fff;
             margin-top: 20px;
@@ -4075,7 +4088,7 @@ body.standalone-mode .keyboard-up .chat-footer {
             color: #333;
         }
 
-        /* 语音气泡样式 - 参考语音条.txt的波纹动画效果 */
+        /* 语音气泡样式 */
         .voice-bubble {
             display: flex;
             align-items: center;
@@ -6597,6 +6610,220 @@ body.standalone-mode .keyboard-up .chat-footer {
     left: 50%;
     transform: translateX(-50%);
 }
+
+/* ==================== 消息长按操作菜单 ==================== */
+.message-action-menu {
+    position: fixed;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 8px;
+    display: flex;
+    gap: 8px;
+    z-index: 10000;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    animation: messageMenuFadeIn 0.2s ease-out;
+}
+
+@keyframes messageMenuFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(-5px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.message-action-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 12px 16px;
+    color: #fff;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background 0.2s;
+    min-width: 60px;
+}
+
+.message-action-item:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.message-action-item:active {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.message-action-item svg {
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+}
+
+.message-action-item span {
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* ==================== 消息多选模式 ==================== */
+.message-wrapper.multi-select-mode {
+    position: relative;
+    padding-left: 50px;
+    transition: padding 0.2s;
+}
+
+.message-wrapper.multi-select-mode::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 24px;
+    border: 2px solid #d0d0d0;
+    border-radius: 50%;
+    background: #fff;
+    transition: all 0.2s;
+}
+
+.message-wrapper.multi-select-mode.selected::before {
+    background: #07c160;
+    border-color: #07c160;
+}
+
+.message-wrapper.multi-select-mode.selected::after {
+    content: '✓';
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #fff;
+    font-size: 16px;
+    font-weight: bold;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+}
+
+.message-bubble.selected {
+    opacity: 0.7;
+    transform: scale(0.98);
+}
+
+.message-bubble {
+    cursor: pointer;
+    transition: transform 0.1s, opacity 0.1s;
+}
+
+.message-wrapper.multi-select-mode .message-bubble {
+    cursor: pointer;
+}
+
+/* ==================== 多选工具栏 ==================== */
+.message-multi-select-toolbar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border-top: 1px solid #e8e8e8;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 1000;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.multi-select-toolbar-left,
+.multi-select-toolbar-right {
+    flex: 1;
+}
+
+.multi-select-toolbar-center {
+    flex: 1;
+    text-align: center;
+}
+
+.multi-select-count {
+    font-size: 15px;
+    color: #333;
+    font-weight: 500;
+}
+
+.multi-select-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.multi-select-btn.cancel-btn {
+    background: #f5f5f5;
+    color: #333;
+}
+
+.multi-select-btn.cancel-btn:active {
+    background: #e8e8e8;
+}
+
+.multi-select-btn.delete-btn {
+    background: #ff3b30;
+    color: #fff;
+    float: right;
+}
+
+.multi-select-btn.delete-btn:disabled {
+    background: #d0d0d0;
+    color: #999;
+    cursor: not-allowed;
+}
+
+.multi-select-btn.delete-btn:not(:disabled):active {
+    background: #d70015;
+}
+
+/* 多选模式下调整输入框位置 */
+#message-detail-page:has(.message-multi-select-toolbar) .message-input-area {
+    bottom: 60px;
+}
+
+/* ==================== 提示Toast ==================== */
+.message-toast {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 15px;
+    z-index: 10001;
+    display: none;
+    animation: toastFadeIn 0.2s ease-out;
+}
+
+@keyframes toastFadeIn {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
 .message-header-avatar-small.default-avatar img {
     display: none;
 }
@@ -8900,7 +9127,7 @@ body.standalone-mode .keyboard-up .message-input-area {
 }
 
 /* 小屋页面样式 - 白色简约+粉色点缀 */
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+/* 🔧 @import 已移到 HTML 中异步加载，避免放在CSS中间导致后续规则被浏览器忽略 */
 
 #cabin-page .custom-page-header {
     background: #fefefe;

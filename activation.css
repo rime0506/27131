@@ -1,6 +1,7 @@
 /* 激活码界面样式 — 纯白简约 ins 风 · 樱花粉点缀 · 灰色字体 */
 
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600&display=swap');
+/* Google Fonts 改为在 font-family 中声明 fallback，避免 @import 阻塞渲染导致白屏 */
+/* 如需加载 Noto Sans SC，请在 HTML 中用 <link rel="stylesheet" media="print" onload="this.media='all'"> 方式异步加载 */
 
 /* ===== 全屏遮罩 ===== */
 #activation-overlay {
@@ -27,10 +28,10 @@
     z-index: 1;
     background: #ffffff;
     border-radius: 24px;
-    padding: 48px 36px 40px;
+    padding: 18px 36px 40px;
     width: 100%;
     max-width: 400px;
-    box-shadow: 0 0 0 1px rgba(255, 183, 197, 0.18);
+    box-shadow: 0 0 0 1px rgba(255, 249, 251, 0.5);
     text-align: center;
     animation: activation-slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -55,7 +56,7 @@
     transform: translateX(-50%);
     width: 48px;
     height: 3px;
-    background: linear-gradient(90deg, #ffb7c5, #ffd4dc, #ffb7c5);
+    background: linear-gradient(90deg, #FFF9FB, #FFF9FB, #FFF9FB);
     border-radius: 0 0 4px 4px;
 }
 
@@ -64,19 +65,19 @@
     width: 68px;
     height: 68px;
     margin: 0 auto 24px;
-    background: #fff5f7;
+    background: #FFF9FB;
     border-radius: 18px;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #e8a0ac;
+    color: #D590A4;
 }
 
 /* ===== 标题 ===== */
 .activation-title {
     font-size: 20px;
     font-weight: 500;
-    color: #555555;
+    color: #D590A4;
     margin: 0 0 8px;
     letter-spacing: 1px;
 }
@@ -94,27 +95,28 @@
     content: '';
     flex: 1;
     height: 1px;
-    background: linear-gradient(90deg, transparent, #f5e0e5, transparent);
+    background: linear-gradient(90deg, transparent, #FFF9FB, transparent);
 }
 
 .activation-divider-dot {
     width: 4px;
     height: 4px;
-    background: #ffc8d4;
+    background: #FFF9FB;
     border-radius: 50%;
 }
 
 /* ===== 描述文字 ===== */
 .activation-desc {
     font-size: 13px;
-    color: #b5b5b5;
-    margin: 0 0 28px;
+    color: #9E9899;
+    margin: 0 0 32px;
     font-weight: 300;
     letter-spacing: 0.5px;
 }
 
 /* ===== 输入框容器 ===== */
 .activation-input-wrap {
+    margin-top: 8px;
     margin-bottom: 18px;
 }
 
@@ -127,22 +129,22 @@
     font-weight: 500;
     letter-spacing: 3px;
     text-align: center;
-    border: 1.5px solid #f2e4e8;
+    border: 1.5px solid #FFF9FB;
     border-radius: 14px;
     outline: none;
     background: #ffffff;
-    color: #666666;
+    color: #9E9899;
     box-sizing: border-box;
     transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .activation-input:focus {
-    border-color: #f5b8c4;
-    box-shadow: 0 0 0 3px rgba(255, 183, 197, 0.1);
+    border-color: #FFF9FB;
+    box-shadow: 0 0 0 3px rgba(255, 249, 251, 0.3);
 }
 
 .activation-input::placeholder {
-    color: #d8cace;
+    color: #9E9899;
     font-weight: 400;
     letter-spacing: 2px;
     font-size: 14px;
@@ -165,9 +167,9 @@
     padding: 13px 0;
     font-size: 14px;
     font-weight: 500;
-    color: #ffffff;
-    background: linear-gradient(135deg, #ffb7c5 0%, #f2a5b5 100%);
-    border: none;
+    color: #D590A4;
+    background: #ffffff;
+    border: 1.5px solid #D590A4;
     border-radius: 14px;
     cursor: pointer;
     transition: transform 0.2s ease, box-shadow 0.3s ease, opacity 0.2s ease;
@@ -177,7 +179,7 @@
 
 .activation-btn:hover {
     transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(255, 183, 197, 0.3);
+    box-shadow: 0 6px 20px rgba(213, 144, 164, 0.3);
 }
 
 .activation-btn:active {
@@ -197,13 +199,13 @@
     min-height: 20px;
     margin-top: 16px;
     font-size: 13px;
-    color: #aaaaaa;
+    color: #9E9899;
     transition: all 0.3s ease;
     font-weight: 400;
 }
 
 .activation-message.error {
-    color: #e8909c;
+    color: #D590A4;
 }
 
 .activation-message.success {
@@ -214,7 +216,7 @@
 .activation-hint {
     margin-top: 22px;
     font-size: 11px;
-    color: #cccccc;
+    color: #9E9899;
     font-weight: 300;
     letter-spacing: 0.5px;
 }
@@ -222,7 +224,7 @@
 /* ===== 移动端适配 ===== */
 @media (max-width: 420px) {
     .activation-card {
-        padding: 40px 24px 32px;
+        padding: 10px 24px 32px;
         border-radius: 20px;
     }
 

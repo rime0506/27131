@@ -28,8 +28,116 @@
     // localStorage 存储键名
     const STORAGE_KEY = 'activation_verified';
     const STORAGE_CODE_KEY = 'activation_code';
+    const DEVICE_ID_KEY = 'activation_device_id';
     
     // ==================== 工具函数 ====================
+    
+    /**
+     * 生成或获取设备唯一ID（确保每个浏览器实例都有唯一标识）
+     * 使用UUID v4格式，存储在localStorage中，确保同一浏览器实例总是使用同一个ID
+     * 
+     * 安全性说明：
+     * 1. UUID存储在localStorage，用户可以清除，但清除后需要重新激活
+     * 2. 即使复制UUID到其他设备，由于结合了浏览器特征，也无法通过验证
+     * 3. 真正的安全防护在后端，前端只是辅助验证
+     */
+    function getOrCreateDeviceId() {
+        try {
+            let deviceId = localStorage.getItem(DEVICE_ID_KEY);
+            if (deviceId && deviceId.length > 0) {
+                // 验证UUID格式（基本格式检查）
+                if (/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(deviceId)) {
+                    return deviceId;
+                }
+                // 如果格式不对，清除并重新生成
+                localStorage.removeItem(DEVICE_ID_KEY);
+            }
+            
+            // 生成UUID v4（简化版，不依赖外部库）
+            // 格式：xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+            function generateUUID() {
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                    const r = Math.random() * 16 | 0;
+                    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+            }
+            
+            deviceId = generateUUID();
+            localStorage.setItem(DEVICE_ID_KEY, deviceId);
+            return deviceId;
+        } catch (e) {
+            // 如果localStorage不可用，使用时间戳+随机数作为后备方案
+            // 注意：这个后备方案不够安全，但至少能工作
+            return 'fallback-' + Date.now() + '-' + Math.random().toString(36).substring(2, 15);
+        }
+    }
+    
+    /**
+     * 生成设备指纹（结合设备ID和浏览器特征，确保唯一性）
+     * 设备ID确保每个浏览器实例唯一，浏览器特征用于额外验证
+     * 
+     * 兼容性：根据激活时使用的格式来决定验证时使用的格式
+     * 确保验证时使用的格式与激活时完全一致，避免刷新后验证失败
+     */
+    function generateDeviceFingerprint() {
+        // 检查是否有激活记录，以及激活时使用的格式
+        try {
+            const data = localStorage.getItem(STORAGE_KEY);
+            if (data) {
+                const parsed = JSON.parse(data);
+                // 如果激活时使用的是旧格式（没有记录useNewFormat或为false）
+                if (!parsed.useNewFormat) {
+                    // 使用旧格式（仅User-Agent），与激活时保持一致
+                    return (navigator.userAgent || '').substring(0, 200);
+                }
+                // 如果激活时使用的是新格式，继续使用新格式
+            }
+        } catch (e) {
+            // 解析失败，检查是否有UUID来决定格式
+            // 如果没有UUID，可能是旧用户，使用旧格式
+            const hasDeviceId = localStorage.getItem(DEVICE_ID_KEY);
+            if (!hasDeviceId) {
+                return (navigator.userAgent || '').substring(0, 200);
+            }
+        }
+        
+        // 新格式：使用UUID + 浏览器特征
+        const deviceId = getOrCreateDeviceId();
+        const parts = [
+            deviceId,
+            navigator.userAgent || '',
+            navigator.language || '',
+            navigator.platform || '',
+            screen.width + 'x' + screen.height,
+            new Date().getTimezoneOffset().toString(),
+            navigator.hardwareConcurrency || '',
+            navigator.deviceMemory || ''
+        ];
+        // 组合所有特征，确保唯一性
+        const fingerprint = parts.join('|');
+        // 截取前255个字符（数据库字段限制）
+        return fingerprint.substring(0, 255);
+    }
+    
+    /**
+     * 生成新格式的设备指纹（用于新激活）
+     */
+    function generateNewDeviceFingerprint() {
+        const deviceId = getOrCreateDeviceId();
+        const parts = [
+            deviceId,
+            navigator.userAgent || '',
+            navigator.language || '',
+            navigator.platform || '',
+            screen.width + 'x' + screen.height,
+            new Date().getTimezoneOffset().toString(),
+            navigator.hardwareConcurrency || '',
+            navigator.deviceMemory || ''
+        ];
+        const fingerprint = parts.join('|');
+        return fingerprint.substring(0, 255);
+    }
     
     function getStoredCode() {
         try {
@@ -46,11 +154,14 @@
     }
     
     function saveActivation(code, qq) {
+        // 记录激活时使用的设备指纹格式（是否有UUID）
+        const hasDeviceId = !!localStorage.getItem(DEVICE_ID_KEY);
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
             activated: true,
             code: code,
             qq: qq || null,
-            time: Date.now()
+            time: Date.now(),
+            useNewFormat: hasDeviceId  // 记录是否使用新格式
         }));
         localStorage.setItem(STORAGE_CODE_KEY, code);
     }
@@ -80,7 +191,7 @@
         fetch(VERIFY_API, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code: code, device: navigator.userAgent.substring(0, 200) })
+            body: JSON.stringify({ code: code, device: generateDeviceFingerprint() })
         })
         .then(r => r.json())
         .then(result => {
@@ -133,7 +244,7 @@
                 </div>
                 <button id="activation-submit-btn" class="activation-btn">验 证</button>
                 <div id="activation-message" class="activation-message"></div>
-                <p class="activation-hint">激活码可通过 QQ 机器人获取</p>
+                <p class="activation-hint">激活码请去群聊私信唧唧人 指令"获取激活码"</p>
             </div>
         `;
         
@@ -183,7 +294,8 @@
                 msg.className = 'activation-message';
                 
                 try {
-                    const device = navigator.userAgent.substring(0, 200);
+                    // 新激活时使用新格式的设备指纹
+                    const device = generateNewDeviceFingerprint();
                     
                     const response = await fetch(VERIFY_API, {
                         method: 'POST',
